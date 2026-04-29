@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars and fill in. Both values land in Secret Manager.
+# DO NOT commit the populated terraform.tfvars file.
+
+project_id              = "ps2o-surplusas-api"
+region                  = "us-central1"
+cloud_sql_instance_name = "surplusas-db"
+cloud_sql_database_name = "surplusas"
+agents_app_db_user      = "surplusas_agents_app"
+
+# Generate strong random values, e.g.:
+#   python -c "import secrets; print(secrets.token_urlsafe(48))"
+agents_app_db_password = "REPLACE_ME"
+webhook_signing_key    = "REPLACE_ME"

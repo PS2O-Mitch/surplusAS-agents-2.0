@@ -49,3 +49,6 @@ evals/out/*.json
 tmp/
 *.db
 *.sqlite
+infra/terraform/terraform.tfvars
+infra/terraform/.terraform/
+infra/terraform/*.tfstate*
