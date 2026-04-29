@@ -8,12 +8,18 @@ without further config.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 from opentelemetry import trace
 
+if TYPE_CHECKING:
+    from collections.abc import MutableMapping
 
-def _add_trace_context(_logger: object, _method: str, event_dict: dict) -> dict:
+
+def _add_trace_context(
+    _logger: object, _method: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
     span = trace.get_current_span()
     ctx = span.get_span_context() if span else None
     if ctx and ctx.is_valid:
@@ -44,4 +50,4 @@ def init_logging(level: str = "INFO") -> None:
 
 
 def get_logger(agent_name: str) -> structlog.stdlib.BoundLogger:
-    return structlog.get_logger().bind(agent_name=agent_name)
+    return cast("structlog.stdlib.BoundLogger", structlog.get_logger().bind(agent_name=agent_name))

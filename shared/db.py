@@ -98,4 +98,5 @@ async def fetch_all(query: str, *args: Any) -> list[dict[str, Any]]:
 async def execute(query: str, *args: Any) -> str:
     pool = _require_pool()
     async with pool.acquire() as conn:
-        return await conn.execute(query, *args)
+        result: str = await conn.execute(query, *args)
+        return result

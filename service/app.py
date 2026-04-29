@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -17,11 +18,14 @@ from shared.config import get_settings
 from shared.logging import init_logging
 from shared.tracing import init_tracing
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
 STATIC_DIR = Path(__file__).parent / "static"
 
 
 @asynccontextmanager
-async def _lifespan(app: FastAPI):
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     init_logging(settings.log_level)
     init_tracing("surplusas-agents-gateway")

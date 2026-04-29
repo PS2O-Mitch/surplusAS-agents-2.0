@@ -7,11 +7,11 @@ owns them; this module is the contract surface that crosses agent boundaries.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime  # noqa: TC003 — pydantic v2 needs runtime resolution
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal
-from uuid import UUID
+from uuid import UUID  # noqa: TC003 — pydantic v2 needs runtime resolution
 
 from pydantic import BaseModel, ConfigDict, Field
 

@@ -39,7 +39,7 @@ def _fetch_id_token(audience: str) -> str:
         return cached[0]
 
     auth_req = google.auth.transport.requests.Request()
-    token = id_token.fetch_id_token(auth_req, audience)
+    token: str = id_token.fetch_id_token(auth_req, audience)  # type: ignore[no-untyped-call]
     # ID tokens last 1 hour; cache for 50 minutes.
     _token_cache[audience] = (token, now + 50 * 60)
     return token
@@ -49,7 +49,7 @@ async def call_peer_agent(
     audience: str,
     body: dict[str, Any],
     path: str = "/v1/agent",
-    timeout: float = 120.0,
+    timeout: float = 120.0,  # noqa: ASYNC109 — passed to httpx, not a stand-in for asyncio.timeout
 ) -> dict[str, Any]:
     """POST `body` to a peer agent service and return the parsed JSON.
 
@@ -67,4 +67,5 @@ async def call_peer_agent(
         async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(url, json=body, headers=headers)
             r.raise_for_status()
-            return r.json()
+            data: dict[str, Any] = r.json()
+            return data

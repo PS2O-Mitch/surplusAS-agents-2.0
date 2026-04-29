@@ -6,15 +6,19 @@ Span names and attribute conventions are pinned in the implementation plan
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import contextlib
 from contextlib import contextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from opentelemetry import propagate, trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.trace import Span
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from opentelemetry.trace import Span
 
 _INITIALISED = False
 
@@ -25,21 +29,18 @@ def init_tracing(service_name: str) -> None:
     if _INITIALISED:
         return
 
-    try:
-        # Lazy import: dev installs without GCP creds shouldn't crash on `from shared.tracing import ...`
-        from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
-    except ImportError:
-        CloudTraceSpanExporter = None  # type: ignore[assignment]
-
     resource = Resource.create({"service.name": service_name})
     provider = TracerProvider(resource=resource)
 
-    if CloudTraceSpanExporter is not None:
-        try:
-            provider.add_span_processor(BatchSpanProcessor(CloudTraceSpanExporter()))
-        except Exception:
-            # No ADC, no project, or Cloud Trace API disabled — fall back to noop.
-            pass
+    # Attempt to attach the Cloud Trace exporter; absence of ADC, project, or
+    # an enabled Cloud Trace API should not crash the process — local dev
+    # without GCP creds runs against the noop tracer.
+    with contextlib.suppress(Exception):
+        from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
+
+        provider.add_span_processor(
+            BatchSpanProcessor(CloudTraceSpanExporter())  # type: ignore[no-untyped-call]
+        )
 
     trace.set_tracer_provider(provider)
     _INITIALISED = True
