@@ -1,0 +1,15 @@
+displayName: surplusas-pricing-agent
+description: Deterministic pricing over the surplusAS-pricing engine.
+agentFramework: ADK
+model: gemini-2.5-flash
+region: us-central1
+serviceAccount: pricing-agent-sa@ps2o-surplusas-api.iam.gserviceaccount.com
+envFromSecretManager:
+  - DB_PASSWORD
+env:
+  GOOGLE_GENAI_USE_VERTEXAI: "true"
+  GOOGLE_CLOUD_PROJECT: ps2o-surplusas-api
+  GOOGLE_CLOUD_LOCATION: us-central1
+  CLOUD_SQL_INSTANCE: ps2o-surplusas-api:us-central1:surplusas-db
+  DB_NAME: surplusas
+  DB_USER: surplusas_agents_app

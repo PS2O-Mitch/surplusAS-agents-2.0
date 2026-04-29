@@ -1,0 +1,3 @@
+[submodule "vendor/surplusas-pricing"]
+	path = vendor/surplusas-pricing
+	url = https://github.com/PS2O-Mitch/surplusAS-pricing-intel.git

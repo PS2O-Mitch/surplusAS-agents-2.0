@@ -1,0 +1,27 @@
+target-version = "py312"
+line-length = 100
+extend-exclude = ["vendor", "build", "dist", ".venv"]
+
+[lint]
+select = [
+    "E", "F", "W",     # pyflakes / pycodestyle
+    "I",                # isort
+    "UP",               # pyupgrade
+    "B",                # bugbear
+    "S",                # bandit
+    "ASYNC",            # async-correctness
+    "RET",              # return statements
+    "SIM",              # simplify
+    "TCH",              # type-checking
+]
+ignore = [
+    "S101",  # assert ok in tests
+    "E501",  # line length handled by formatter
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["S", "B"]
+"scripts/**" = ["S"]
+
+[lint.isort]
+known-first-party = ["agents", "shared", "service"]
