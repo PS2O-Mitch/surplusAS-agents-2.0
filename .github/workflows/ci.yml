@@ -15,7 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          # Submodule clone disabled until a cross-repo PAT (or deploy key)
+          # is provisioned for the private vendor/surplusas-pricing repo.
+          # Week 1 smoke tests don't need pricing_engine; Week 2 (engine_adapter)
+          # will require fixing this — track in OPEN_ITEMS.
+          submodules: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
