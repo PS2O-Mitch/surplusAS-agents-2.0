@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SurplusAS — Merchant Demo</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #FAFAF8;
+  --card: #FFFFFF;
+  --text: #1A1A1A;
+  --text2: #6B6B6B;
+  --text3: #9C9C9C;
+  --accent: #1B6B3A;
+  --accent-light: #E8F5EC;
+  --accent-glow: #2ECC71;
+  --border: #E8E8E4;
+  --danger: #D94040;
+  --danger-light: #FDE8E8;
+  --amber: #D4870B;
+  --amber-light: #FEF5E1;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+body {
+  font-family: 'DM Sans', -apple-system, sans-serif;
+  background: #1A1A1A;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.phone-frame {
+  width: 390px;
+  height: 844px;
+  background: var(--bg);
+  border-radius: 44px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 0 0 3px #333, 0 0 0 6px #1A1A1A, 0 20px 60px rgba(0,0,0,0.5);
+}
+
+.notch {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 160px;
+  height: 34px;
+  background: #1A1A1A;
+  border-radius: 0 0 20px 20px;
+  z-index: 100;
+}
+
+.status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 28px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  height: 50px;
+  position: relative;
+  z-index: 50;
+}
+
+.status-bar-right {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.screen {
+  height: calc(100% - 50px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 20px 100px;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+.screen::-webkit-scrollbar { display: none; }
+
+.header {
+  padding: 16px 0 20px;
+}
+
+.header h1 {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.5px;
+}
+
+.header p {
+  font-size: 14px;
+  color: var(--text2);
+  margin-top: 4px;
+}
+
+.try-it-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  background: var(--accent-light);
+  color: var(--accent);
+  border: 1.5px solid var(--accent);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 0;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.try-it-btn:active { transform: scale(0.98); }
+.try-it-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sample-status {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 6px;
+  min-height: 16px;
+}
+
+.upload-zone {
+  background: var(--card);
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 40px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-zone:active { transform: scale(0.98); }
+.upload-zone.has-image { border-style: solid; border-color: var(--accent); padding: 0; }
+.upload-zone.dragover { border-color: var(--accent); background: var(--accent-light); }
+
+.upload-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 12px;
+  background: var(--accent-light);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-icon svg { width: 24px; height: 24px; color: var(--accent); }
+
+.upload-zone h3 { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.upload-zone p { font-size: 13px; color: var(--text3); }
+
+.preview-img {
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+  border-radius: 14px;
+  display: none;
+}
+
+.upload-zone.has-image .preview-img { display: block; }
+.upload-zone.has-image .upload-icon,
+.upload-zone.has-image h3,
+.upload-zone.has-image p { display: none; }
+
+.input-group {
+  margin-top: 16px;
+}
+
+.input-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text2);
+  display: block;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.text-input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--card);
+  resize: none;
+  transition: border-color 0.2s;
+  outline: none;
+}
+
+.text-input:focus { border-color: var(--accent); }
+.text-input::placeholder { color: var(--text3); }
+
+.generate-btn {
+  width: 100%;
+  padding: 16px;
+  background: var(--accent);
+  color: white;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  margin-top: 16px;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.generate-btn:active { transform: scale(0.98); }
+.generate-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.generate-btn .spinner {
+  display: none;
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto;
+}
+
+.generate-btn.loading .btn-text { display: none; }
+.generate-btn.loading .spinner { display: block; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.result-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-top: 20px;
+  overflow: hidden;
+  display: none;
+  animation: slideUp 0.4s ease;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.result-card.visible { display: block; }
+
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.result-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.status-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.status-badge.ready { background: var(--accent-light); color: var(--accent); }
+.status-badge.review { background: var(--amber-light); color: var(--amber); }
+.status-badge.blocked { background: var(--danger-light); color: var(--danger); }
+
+.result-body { padding: 18px; }
+
+.listing-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+  margin-bottom: 8px;
+}
+
+.listing-desc {
+  font-size: 14px;
+  color: var(--text2);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.price-surplus {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.price-original {
+  font-size: 16px;
+  color: var(--text3);
+  text-decoration: line-through;
+}
+
+.discount-tag {
+  font-size: 12px;
+  font-weight: 700;
+  color: white;
+  background: var(--accent);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.meta-item {
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+
+.meta-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 4px;
+}
+
+.meta-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.items-list {
+  margin-bottom: 16px;
+}
+
+.items-list h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.item-row:last-child { border-bottom: none; }
+
+.item-name {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.item-conf {
+  font-size: 12px;
+  color: var(--text3);
+  font-weight: 500;
+}
+
+.dietary-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.diet-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--bg);
+  color: var(--text2);
+  border: 1px solid var(--border);
+}
+
+.diet-tag.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.safety-box {
+  background: var(--amber-light);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.safety-box h4 {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--amber);
+  margin-bottom: 4px;
+}
+
+.safety-box p {
+  font-size: 13px;
+  color: #8B6914;
+  line-height: 1.5;
+}
+
+.allergen-box {
+  background: var(--danger-light);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.allergen-box h4 {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--danger);
+  margin-bottom: 4px;
+}
+
+.allergen-box p {
+  font-size: 13px;
+  color: #8B2020;
+  line-height: 1.5;
+}
+
+.confidence-bar {
+  margin-bottom: 16px;
+}
+
+.confidence-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.confidence-header span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+}
+
+.confidence-track {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.confidence-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.8s ease;
+}
+
+.outcome-section {
+  padding: 16px 18px;
+  border-top: 1px solid var(--border);
+}
+
+.outcome-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text3);
+  padding: 3px 0;
+}
+
+.outcome-row span:last-child { font-family: 'DM Sans', monospace; }
+
+.error-card {
+  background: var(--danger-light);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-top: 20px;
+  display: none;
+  animation: slideUp 0.4s ease;
+}
+
+.error-card.visible { display: block; }
+.error-card h3 { font-size: 15px; font-weight: 600; color: var(--danger); margin-bottom: 6px; }
+.error-card p { font-size: 13px; color: #8B2020; line-height: 1.5; }
+
+.mode-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.mode-tabs::-webkit-scrollbar { display: none; }
+
+.mode-tab {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  color: var(--text2);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-tab.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.home-bar {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 140px;
+  height: 5px;
+  background: #CCC;
+  border-radius: 3px;
+}
+
+.backend-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent-light);
+  color: var(--accent);
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.warnings-banner {
+  background: var(--amber-light);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+.warnings-banner h4 { font-size: 12px; font-weight: 700; color: var(--amber); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.4px; }
+.warnings-banner ul { list-style: none; padding: 0; }
+.warnings-banner ul li { font-size: 13px; color: #8B6914; line-height: 1.5; padding: 2px 0; }
+.warnings-banner ul li::before { content: '⚠ '; }
+
+.clarification-box { background: #EEF2FF; border: 1px solid #A5B4FC; border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 16px; }
+.clarification-box h4 { font-size: 12px; font-weight: 700; color: #4338CA; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.4px; }
+.clarification-box ul { list-style: none; padding: 0; }
+.clarification-box ul li { font-size: 13px; color: #3730A3; line-height: 1.5; padding: 2px 0; }
+.clarification-box ul li::before { content: '? '; font-weight: 700; }
+
+.photo-quality-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; margin-left: 8px; vertical-align: middle; }
+.photo-quality-badge.good    { background: var(--accent-light); color: var(--accent); }
+.photo-quality-badge.acceptable { background: var(--amber-light); color: var(--amber); }
+.photo-quality-badge.poor   { background: var(--danger-light); color: var(--danger); }
+
+.listing-id-chip { display: inline-block; font-size: 11px; font-weight: 600; color: var(--text3); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; margin-bottom: 12px; font-family: monospace; }
+
+.photo-suggestions { margin-top: 6px; padding: 0; list-style: none; }
+.photo-suggestions li { font-size: 12px; color: var(--text2); padding: 2px 0; line-height: 1.4; }
+.photo-suggestions li::before { content: '→ '; color: var(--text3); }
+
+.pricing-delta-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.pricing-delta-label { font-size: 12px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+.pricing-current-discount { font-size: 14px; font-weight: 600; color: var(--text2); }
+.pricing-arrow { font-size: 14px; color: var(--text3); }
+.pricing-new-discount { font-size: 14px; font-weight: 700; color: var(--accent); }
+
+.publish-section {
+  padding: 16px 18px 18px;
+  border-top: 1px solid var(--border);
+}
+
+.publish-btn {
+  width: 100%;
+  padding: 14px;
+  background: var(--accent-glow);
+  color: white;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.publish-btn:active { transform: scale(0.98); }
+.publish-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.publish-btn .spinner {
+  display: none;
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto;
+}
+
+.publish-btn.loading .btn-text { display: none; }
+.publish-btn.loading .spinner { display: block; }
+
+.publish-status {
+  margin-top: 10px;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text2);
+  min-height: 0;
+  word-break: break-word;
+}
+
+.publish-status.success {
+  background: var(--accent-light);
+  color: var(--accent);
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.publish-status.error {
+  background: var(--danger-light);
+  color: var(--danger);
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.publish-status.pending {
+  background: var(--bg);
+  color: var(--text2);
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+</style>
+</head>
+<body>
+<div class="phone-frame">
+  <div class="notch"></div>
+  <div class="status-bar">
+    <span>9:41</span>
+    <div class="status-bar-right">
+      <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M1 8h2v4H1zM5 5h2v7H5zM9 3h2v9H9zM13 0h2v12h-2z" fill="currentColor"/></svg>
+      <svg width="16" height="12" viewBox="0 0 24 12" fill="none"><rect x="0" y="1" width="20" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/><rect x="2" y="3" width="14" height="6" rx="1" fill="currentColor"/><rect x="21" y="4" width="2" height="4" rx="0.5" fill="currentColor"/></svg>
+    </div>
+  </div>
+
+  <div class="screen" id="screen">
+    <div class="header">
+      <h1>SurplusAS Demo</h1>
+      <p>Merchant listing</p>
+    </div>
+
+    <div class="mode-tabs">
+      <button class="mode-tab active" data-mode="listing_create">Create listing</button>
+      <button class="try-it-btn" id="tryItBtn" type="button" aria-label="Try with sample food image">
+        <span aria-hidden="true">✨</span>
+        <span>Try It</span>
+      </button>
+    </div>
+
+    <div id="upload-section">
+      <div class="upload-zone" id="uploadZone">
+        <div class="upload-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M20 16v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2"/></svg>
+        </div>
+        <h3>Tap to photograph food</h3>
+        <p>or upload an existing photo</p>
+        <img class="preview-img" id="previewImg" alt="">
+      </div>
+      <div class="sample-status" id="sampleStatus" aria-live="polite"></div>
+      <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
+    </div>
+
+    <div class="input-group">
+      <label id="inputLabel">Merchant note</label>
+      <textarea class="text-input" id="merchantInput" rows="3" placeholder="e.g. Closing in 30 mins, 20 croissants left. Use code SAVE20"></textarea>
+    </div>
+
+    <button class="generate-btn" id="generateBtn">
+      <span class="btn-text">Generate listing</span>
+      <div class="spinner"></div>
+    </button>
+
+    <div class="error-card" id="errorCard">
+      <h3 id="errorTitle">Error</h3>
+      <p id="errorMsg"></p>
+    </div>
+
+    <div class="result-card" id="resultCard">
+      <div class="result-header">
+        <h3>Agent output <span class="backend-badge" id="backendBadge"></span></h3>
+        <span class="status-badge" id="statusBadge"></span>
+      </div>
+      <div class="result-body" id="resultBody"></div>
+      <div class="outcome-section" id="outcomeSection"></div>
+      <div class="publish-section" id="publishSection" style="display:none">
+        <button class="publish-btn" id="publishBtn">
+          <span class="btn-text">Publish Listing</span>
+          <div class="spinner"></div>
+        </button>
+        <div class="publish-status" id="publishStatus"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="home-bar"></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+let currentMode = 'listing_create';
+let imageBase64 = null;
+let lastListingData = null;   // data from last listing_create response
+let lastListingImage = null;  // base64 captured at publish-time
+
+const API_URL = '';
+
+// Mode tabs
+$$('.mode-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    $$('.mode-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentMode = tab.dataset.mode;
+    updateUIForMode();
+  });
+});
+
+function updateUIForMode() {
+  const uploadSection = $('#upload-section');
+  const inputLabel = $('#inputLabel');
+  const input = $('#merchantInput');
+  const btn = $('#generateBtn .btn-text');
+
+  switch(currentMode) {
+    case 'listing_create':
+      uploadSection.style.display = 'block';
+      inputLabel.textContent = 'Merchant note';
+      input.placeholder = 'e.g. Closing in 30 mins, 20 croissants left. Use code SAVE20';
+      input.rows = 3;
+      btn.textContent = 'Generate listing';
+      break;
+    case 'search_interpret':
+      uploadSection.style.display = 'none';
+      inputLabel.textContent = 'Customer search query';
+      input.placeholder = 'e.g. cheap vegetarian dinner tonight, no nuts';
+      input.rows = 2;
+      btn.textContent = 'Interpret search';
+      break;
+    case 'moderate':
+      uploadSection.style.display = 'none';
+      inputLabel.textContent = 'Listing to moderate (JSON or description)';
+      input.placeholder = '{"title": "Homemade Bone Broth", "description": "Made in my kitchen. Cures joint pain."}';
+      input.rows = 4;
+      btn.textContent = 'Run moderation';
+      break;
+    case 'pricing_optimize':
+      uploadSection.style.display = 'none';
+      inputLabel.textContent = 'Listing + context (JSON)';
+      input.placeholder = '{"title": "Pizza", "current_price": 10.80, "original_price": 18.00, "store_closes": "9pm", "views": 12, "saves": 0}';
+      input.rows = 4;
+      btn.textContent = 'Optimize pricing';
+      break;
+  }
+}
+
+// Image upload
+$('#uploadZone').addEventListener('click', () => $('#fileInput').click());
+
+$('#fileInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    imageBase64 = ev.target.result;
+    $('#previewImg').src = imageBase64;
+    $('#uploadZone').classList.add('has-image');
+  };
+  reader.readAsDataURL(file);
+});
+
+// Drag and drop
+const zone = $('#uploadZone');
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+zone.addEventListener('drop', e => {
+  e.preventDefault();
+  zone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (!file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    imageBase64 = ev.target.result;
+    $('#previewImg').src = imageBase64;
+    zone.classList.add('has-image');
+  };
+  reader.readAsDataURL(file);
+});
+
+// Generate
+$('#generateBtn').addEventListener('click', async () => {
+  const btn = $('#generateBtn');
+  const input = $('#merchantInput').value.trim();
+
+  if (!input && !imageBase64) return;
+
+  btn.classList.add('loading');
+  btn.disabled = true;
+  $('#resultCard').classList.remove('visible');
+  $('#errorCard').classList.remove('visible');
+  $('#publishSection').style.display = 'none';
+  $('#publishStatus').textContent = '';
+  $('#publishStatus').className = 'publish-status';
+  lastListingData = null;
+  lastListingImage = null;
+
+  const body = {
+    mode: currentMode,
+    input: input || 'Analyze the image and generate a listing',
+  };
+
+  if (imageBase64 && currentMode === 'listing_create') {
+    body.image = imageBase64;
+  }
+
+  try {
+    console.log('[SurplusAS] listing_create payload:', JSON.stringify(body, null, 2));
+    const res = await fetch(`${API_URL}/demo/v1/agent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const json = await res.json();
+    console.log('[SurplusAS] listing_create response (HTTP ' + res.status + '):', JSON.stringify(json, null, 2));
+
+    if (!res.ok) {
+      showError('API Error ' + res.status, json.detail || 'Request failed');
+      return;
+    }
+
+    renderResult(json);
+
+    // Stash listing for explicit publish
+    if (currentMode === 'listing_create' && json.success !== false) {
+      lastListingData = json.data || json;
+      lastListingImage = imageBase64;
+      $('#publishSection').style.display = 'block';
+      $('#publishStatus').textContent = '';
+      $('#publishStatus').className = 'publish-status';
+    }
+
+  } catch (err) {
+    showError('Connection failed', `Could not reach the SurplusAS API. Please try again in a moment.`);
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+  }
+});
+
+// Publish — send listing to /v1/listings/publish on explicit click
+$('#publishBtn').addEventListener('click', async () => {
+  if (!lastListingData) return;
+
+  if (!confirm('Publish this listing to customers?')) return;
+
+  const btn = $('#publishBtn');
+  const statusEl = $('#publishStatus');
+
+  const setStatus = (cls, text) => {
+    statusEl.className = 'publish-status ' + cls;
+    statusEl.textContent = text;
+  };
+  const finish = () => {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+  };
+
+  btn.classList.add('loading');
+  btn.disabled = true;
+  setStatus('pending', 'Publishing listing...');
+
+  const publishBody = {
+    listing: lastListingData,
+    ...(lastListingImage ? { image: lastListingImage } : {}),
+    partner_id: 'demo_001',
+    store_id: 'store_demo_01',
+  };
+
+  try {
+    const res = await fetch(`${API_URL}/demo/v1/listings/publish`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(publishBody),
+    });
+    const r = await res.json();
+    console.log('[SurplusAS] publish response:', JSON.stringify(r, null, 2));
+
+    if (res.ok && r.success) {
+      setStatus('success', `Published! ID: ${r.published_listing_id}`);
+    } else {
+      setStatus('error', `Publish failed: ${r.detail || r.message || 'Unknown error'}`);
+    }
+  } catch (err) {
+    setStatus('error', `Publish error: ${err.message}`);
+  } finally {
+    finish();
+  }
+});
+
+function showError(title, msg) {
+  $('#errorTitle').textContent = title;
+  $('#errorMsg').textContent = msg;
+  $('#errorCard').classList.add('visible');
+  $('#errorCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function renderResult(json) {
+  const data = json.data || json;
+  const card = $('#resultCard');
+  const body = $('#resultBody');
+  const outcome = $('#outcomeSection');
+
+  // Guard: success:false with HTTP 200
+  if (json.success === false) {
+    showError('Agent error', json.error || json.detail || 'The agent returned success: false');
+    return;
+  }
+
+  // Backend badge
+  const badge = $('#backendBadge');
+  badge.textContent = data.outcome_tracking?.model_used || json.mode || '';
+
+  // Status badge
+  const statusBadge = $('#statusBadge');
+  const status = data.status || data.overall_risk || json.mode;
+  statusBadge.textContent = status;
+  statusBadge.className = 'status-badge';
+  if (status === 'ready_for_publish' || status === 'pass' || data.approved === true) statusBadge.classList.add('ready');
+  else if (status === 'needs_review' || status === 'low_risk' || status === 'medium_risk') statusBadge.classList.add('review');
+  else if (status === 'blocked' || status === 'high_risk' || data.approved === false) statusBadge.classList.add('blocked');
+
+  let html = '';
+  if (Array.isArray(json.warnings) && json.warnings.length > 0) {
+    html += '<div class="warnings-banner"><h4>Validation warnings</h4><ul>';
+    json.warnings.forEach(w => { html += `<li>${esc(typeof w === 'string' ? w : JSON.stringify(w))}</li>`; });
+    html += '</ul></div>';
+  }
+
+  let modeHtml = '';
+  if (json.mode === 'listing_create' || data.mode === 'listing_create') {
+    modeHtml = renderListingCreate(data);
+  } else if (json.mode === 'search_interpret' || data.mode === 'search_interpret') {
+    modeHtml = renderSearchInterpret(data);
+  } else if (json.mode === 'moderate' || data.mode === 'moderate') {
+    modeHtml = renderModerate(data);
+  } else if (json.mode === 'pricing_optimize' || data.mode === 'pricing_optimize') {
+    modeHtml = renderPricingOptimize(data);
+  } else {
+    modeHtml = `<pre style="font-size:12px;white-space:pre-wrap;color:var(--text2)">${JSON.stringify(data, null, 2)}</pre>`;
+  }
+
+  body.innerHTML = html + modeHtml;
+
+  // Outcome tracking
+  const ot = data.outcome_tracking;
+  if (ot || json.latency_ms != null) {
+    outcome.innerHTML = `
+      <div class="outcome-row"><span>Agent version</span><span>${ot?.agent_version || '—'}</span></div>
+      <div class="outcome-row"><span>Model</span><span>${ot?.model_used || '—'}</span></div>
+      <div class="outcome-row"><span>Timestamp</span><span>${ot?.inference_timestamp ? new Date(ot.inference_timestamp).toLocaleTimeString() : '—'}</span></div>
+      <div class="outcome-row"><span>Tokens</span><span>${ot?.tokens_consumed || '—'}</span></div>
+      ${json.latency_ms != null ? `<div class="outcome-row"><span>Latency</span><span>${json.latency_ms} ms</span></div>` : ''}
+    `;
+  }
+
+  card.classList.add('visible');
+  setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+}
+
+function renderListingCreate(d) {
+  let html = '';
+
+  // Listing ID
+  if (d.listing_id) {
+    html += `<div class="listing-id-chip">ID: ${esc(d.listing_id)}</div>`;
+  }
+
+  // Confidence
+  const conf = Math.round((d.confidence || 0) * 100);
+  html += `<div class="confidence-bar">
+    <div class="confidence-header"><span>Agent confidence</span><span>${conf}%</span></div>
+    <div class="confidence-track"><div class="confidence-fill" style="width:${conf}%"></div></div>
+  </div>`;
+
+  // Title + description
+  html += `<div class="listing-title">${esc(d.title || '')}</div>`;
+  html += `<div class="listing-desc">${esc(d.description || '')}</div>`;
+
+  // Pricing
+  const p = d.pricing || {};
+  if (p.suggested_surplus_price) {
+    html += `<div class="price-row">
+      <span class="price-surplus">$${Number(p.suggested_surplus_price).toFixed(2)}</span>
+      ${p.estimated_retail_value ? `<span class="price-original">$${Number(p.estimated_retail_value).toFixed(2)}</span>` : ''}
+      ${p.discount_percentage ? `<span class="discount-tag">${p.discount_percentage}% off</span>` : ''}
+    </div>`;
+  }
+
+  // Pricing logic
+  if (p.pricing_logic) {
+    html += `<div class="safety-box" style="margin-bottom:12px"><h4>Pricing logic</h4><p>${esc(p.pricing_logic)}</p></div>`;
+  }
+
+  // Meta grid
+  html += `<div class="meta-grid">
+    <div class="meta-item"><div class="meta-label">Category</div><div class="meta-value">${esc(d.category || '—')}</div></div>
+    <div class="meta-item"><div class="meta-label">Pickup</div><div class="meta-value">${esc(d.pickup_window || '—')}</div></div>
+  </div>`;
+
+  // Items identified
+  const items = d.items_identified || [];
+  if (items.length > 0) {
+    html += `<div class="items-list"><h4>Items identified</h4>`;
+    items.forEach(item => {
+      const c = Math.round((item.confidence || 0) * 100);
+      html += `<div class="item-row">
+        <span class="item-name">${esc(item.name)} (${item.quantity})</span>
+        <span class="item-conf">${c}%</span>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  // Dietary tags
+  const da = d.dietary_attributes || {};
+  const tags = [];
+  if (da.is_vegan) tags.push('Vegan');
+  if (da.is_vegetarian) tags.push('Vegetarian');
+  if (da.is_gluten_free) tags.push('Gluten-free');
+  if (da.is_halal) tags.push('Halal');
+  if (da.is_kosher) tags.push('Kosher');
+  if (da.is_nut_free) tags.push('Nut-free');
+  if (da.is_dairy_free) tags.push('Dairy-free');
+
+  if (tags.length > 0) {
+    html += '<div class="dietary-tags">';
+    tags.forEach(t => { html += `<span class="diet-tag active">${t}</span>`; });
+    html += '</div>';
+  }
+
+  // Allergen warning
+  if (da.allergen_warning) {
+    html += `<div class="allergen-box"><h4>Allergen warning</h4><p>${esc(da.allergen_warning)}</p></div>`;
+  }
+
+  // Food safety
+  if (d.food_safety_notes) {
+    html += `<div class="safety-box"><h4>Food safety</h4><p>${esc(d.food_safety_notes)}</p></div>`;
+  }
+
+  // Photo feedback
+  const ia = d.image_analysis || {};
+  if (ia.merchant_feedback || ia.photo_quality || (Array.isArray(ia.photo_suggestions) && ia.photo_suggestions.length > 0)) {
+    const qualityClass = (ia.photo_quality || '').toLowerCase();
+    const qualityBadge = ia.photo_quality ? `<span class="photo-quality-badge ${qualityClass}">${esc(ia.photo_quality)}</span>` : '';
+    let suggestionsHtml = '';
+    if (Array.isArray(ia.photo_suggestions) && ia.photo_suggestions.length > 0) {
+      suggestionsHtml = '<ul class="photo-suggestions">';
+      ia.photo_suggestions.forEach(s => { suggestionsHtml += `<li>${esc(s)}</li>`; });
+      suggestionsHtml += '</ul>';
+    }
+    html += `<div class="meta-item" style="margin-bottom:0">
+      <div class="meta-label">Photo feedback ${qualityBadge}</div>
+      <div class="meta-value">${esc(ia.merchant_feedback || '')}${suggestionsHtml}</div>
+    </div>`;
+  }
+
+  // Clarification needed
+  if (Array.isArray(d.clarification_needed) && d.clarification_needed.length > 0) {
+    html += '<div class="clarification-box"><h4>Clarification needed</h4><ul>';
+    d.clarification_needed.forEach(q => { html += `<li>${esc(q)}</li>`; });
+    html += '</ul></div>';
+  }
+
+  return html;
+}
+
+function renderSearchInterpret(d) {
+  let html = '';
+  html += `<div class="meta-item" style="margin-bottom:12px"><div class="meta-label">Detected language</div><div class="meta-value">${d.input_language || '—'}</div></div>`;
+  html += `<div class="listing-title" style="font-size:15px">${esc(d.interpreted_query || '')}</div>`;
+
+  const f = d.filters || {};
+  html += '<div class="meta-grid">';
+  if (f.category) html += `<div class="meta-item"><div class="meta-label">Category</div><div class="meta-value">${esc(f.category)}</div></div>`;
+  if (f.pickup_before) html += `<div class="meta-item"><div class="meta-label">Pickup before</div><div class="meta-value">${esc(f.pickup_before)}</div></div>`;
+  if (f.cuisine_type) html += `<div class="meta-item"><div class="meta-label">Cuisine</div><div class="meta-value">${esc(f.cuisine_type)}</div></div>`;
+  if (f.max_price) html += `<div class="meta-item"><div class="meta-label">Max price</div><div class="meta-value">$${f.max_price}</div></div>`;
+  html += '</div>';
+
+  if (d.sort_preference) html += `<div class="meta-item" style="margin-bottom:12px"><div class="meta-label">Sort by</div><div class="meta-value">${d.sort_preference}</div></div>`;
+
+  const dr = f.dietary_requirements || {};
+  const dietFilters = [];
+  if (dr.must_be_vegan) dietFilters.push('Vegan');
+  if (dr.must_be_vegetarian) dietFilters.push('Vegetarian');
+  if (dr.must_be_gluten_free) dietFilters.push('Gluten-free');
+  if (dr.must_be_nut_free) dietFilters.push('Nut-free');
+  if (dr.must_be_halal) dietFilters.push('Halal');
+  if (dr.must_be_dairy_free) dietFilters.push('Dairy-free');
+  if (dr.must_be_kosher) dietFilters.push('Kosher');
+
+  if (dietFilters.length > 0) {
+    html += '<div class="dietary-tags">';
+    dietFilters.forEach(t => { html += `<span class="diet-tag active">${t}</span>`; });
+    html += '</div>';
+  }
+
+  const kw = d.cross_language_keywords || f.keywords || [];
+  if (kw.length > 0) {
+    html += '<div class="dietary-tags">';
+    kw.forEach(k => { html += `<span class="diet-tag">${esc(k)}</span>`; });
+    html += '</div>';
+  }
+
+  return html;
+}
+
+function renderModerate(d) {
+  let html = '';
+  html += `<div class="listing-title" style="font-size:16px">${d.approved ? 'Listing approved' : 'Listing rejected'}</div>`;
+  html += `<div class="meta-item" style="margin-bottom:12px"><div class="meta-label">Risk level</div><div class="meta-value">${d.overall_risk || '—'}</div></div>`;
+
+  (d.flags || []).forEach(flag => {
+    const boxClass = flag.severity === 'block' ? 'allergen-box' : 'safety-box';
+    html += `<div class="${boxClass}">
+      <h4>${flag.rule} (${flag.severity})</h4>
+      <p>${esc(flag.explanation)}</p>
+      ${flag.suggested_fix ? `<p style="margin-top:6px;font-weight:600">Fix: ${esc(flag.suggested_fix)}</p>` : ''}
+    </div>`;
+  });
+
+  return html;
+}
+
+function renderPricingOptimize(d) {
+  let html = '';
+  html += `<div class="price-row">
+    <span class="price-surplus">$${Number(d.recommended_price || 0).toFixed(2)}</span>
+    <span class="discount-tag">${d.recommended_discount_pct || 0}% off</span>
+  </div>`;
+  if (d.current_discount_pct != null) {
+    html += `<div class="pricing-delta-row">
+      <span class="pricing-delta-label">Discount</span>
+      <span class="pricing-current-discount">${d.current_discount_pct}%</span>
+      <span class="pricing-arrow">→</span>
+      <span class="pricing-new-discount">${d.recommended_discount_pct || 0}%</span>
+    </div>`;
+  }
+  html += `<div class="meta-grid">
+    <div class="meta-item"><div class="meta-label">Urgency</div><div class="meta-value">${d.urgency_level || '—'}</div></div>
+    <div class="meta-item"><div class="meta-label">Change</div><div class="meta-value">${d.price_change_magnitude || '—'}</div></div>
+  </div>`;
+  if (d.reasoning) {
+    html += `<div class="safety-box"><h4>Pricing logic</h4><p>${esc(d.reasoning)}</p></div>`;
+  }
+  return html;
+}
+
+function esc(s) {
+  const el = document.createElement('span');
+  el.textContent = s;
+  return el.innerHTML;
+}
+
+// Try It — load curated sample image + merchant note, shuffle-bag rotation
+// (each of N samples appears exactly once per N clicks; order randomized per cycle)
+let samplesManifest = null;
+let sampleBag = [];
+let lastSampleId = null;
+
+async function loadSamplesManifest() {
+  if (samplesManifest) return samplesManifest;
+  const res = await fetch('/demo/samples/manifest.json');
+  if (!res.ok) throw new Error('manifest ' + res.status);
+  const json = await res.json();
+  samplesManifest = json.samples || [];
+  return samplesManifest;
+}
+
+function drawSample(samples) {
+  if (sampleBag.length === 0) {
+    sampleBag = samples.slice();
+    for (let i = sampleBag.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [sampleBag[i], sampleBag[j]] = [sampleBag[j], sampleBag[i]];
+    }
+    if (lastSampleId && sampleBag[0].id === lastSampleId && sampleBag.length > 1) {
+      [sampleBag[0], sampleBag[1]] = [sampleBag[1], sampleBag[0]];
+    }
+  }
+  const sample = sampleBag.shift();
+  lastSampleId = sample.id;
+  return sample;
+}
+
+$('#tryItBtn').addEventListener('click', async () => {
+  const btn = $('#tryItBtn');
+  btn.disabled = true;
+  try {
+    const samples = await loadSamplesManifest();
+    if (samples.length === 0) return;
+    const sample = drawSample(samples);
+
+    // Clear prior response / error / publish state so transitions are clean
+    $('#resultCard').classList.remove('visible');
+    $('#errorCard').classList.remove('visible');
+    $('#publishSection').style.display = 'none';
+    $('#publishStatus').textContent = '';
+    $('#publishStatus').className = 'publish-status';
+    lastListingData = null;
+    lastListingImage = null;
+    $('#fileInput').value = '';
+
+    const imgRes = await fetch(sample.image);
+    if (!imgRes.ok) throw new Error('sample ' + imgRes.status);
+    const blob = await imgRes.blob();
+
+    await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        imageBase64 = ev.target.result;
+        const preview = $('#previewImg');
+        preview.src = imageBase64;
+        preview.alt = `Sample: ${sample.category} surplus`;
+        $('#uploadZone').classList.add('has-image');
+        $('#merchantInput').value = sample.note;
+        $('#sampleStatus').textContent = `Sample: ${sample.category}`;
+        resolve();
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  } catch (err) {
+    showError('Could not load sample', err.message || 'Please try again.');
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
