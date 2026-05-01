@@ -52,3 +52,7 @@ tmp/
 infra/terraform/terraform.tfvars
 infra/terraform/.terraform/
 infra/terraform/*.tfstate*
+
+# graphify
+graphify_local/
+graphify-out/

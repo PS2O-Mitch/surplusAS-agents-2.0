@@ -39,6 +39,39 @@ These are inherited from the consumed `surplusas-pricing` engine. Violating them
 - **`uv`** for dependency management; lockfile is checked in.
 - File paths in markdown use the format `[name.py:42](path/to/name.py#L42)` so VSCode renders them clickable.
 
+## Common commands
+
+```bash
+uv sync --extra dev                       # install deps incl. dev tools
+uv run python -m service.main             # run the FastAPI gateway locally on $PORT (default 8080)
+uv run pytest tests/unit                  # unit tests (CI runs only this for now)
+uv run pytest tests/integration -m integration   # needs live Postgres / mocked Agent Engine
+uv run pytest tests/unit/test_smoke.py::test_name -v   # single test
+uv run ruff check .                       # lint (config: ruff.toml)
+uv run mypy agents shared service         # type check (strict; vendor/ excluded)
+uv run python -m evals.runner --agent all --threshold 0.85  # golden evals (needs Vertex)
+PG_USER=... PG_PASSWORD=... uv run python scripts/apply_schema.py   # apply shared/db_schema.sql
+```
+
+Pytest markers (`pytest.ini`): `integration` (live PG / mocked Agent Engine), `e2e` (full demo flow).
+
+## Module map
+
+- `service/app.py` — FastAPI gateway factory; mounts REST, demo shim, inbound A2A, static UI. `service/main.py` is the uvicorn entrypoint.
+- `agents/<name>/agent.py` + `manifest.yaml` — one directory per agent (`concierge`, `pricing`, `onboarding`, `listing_intake`, `dispute_triage`). The Pricing agent additionally owns `engine_adapter.py` (the only writer to `agents.recommendation_log`).
+- `shared/a2a.py` — outbound A2A client; owns ID-token caching and trace propagation. **All inter-agent calls go through this.**
+- `shared/db.py` — process-wide asyncpg pool via Cloud SQL Connector. Tests use `init_pool_from_dsn()` to bypass the connector.
+- `shared/schemas.py` — wire-format Pydantic contracts that cross agent boundaries (A2A envelopes, `RecommendationLogEntry`, webhook events). Agent-internal DTOs live with their owning agent.
+- `shared/config.py` — `get_settings()` (cached); 12-factor env-driven, secrets injected at container start.
+- `shared/db_schema.sql` — DDL for the `agents` schema. Apply via `scripts/apply_schema.py`.
+- `infra/terraform/` — IAM, Cloud SQL user, Secret Manager. `vendor/surplusas-pricing/` is the pricing-engine submodule.
+
+## Operational gotchas
+
+- **A2A from a dev laptop:** plain-user ADC cannot mint audience-scoped ID tokens. Use `gcloud auth application-default login --impersonate-service-account=...` or run on Cloud Run/GCE. See `shared/a2a.py:11`.
+- **CI does not clone the submodule** (`.github/workflows/ci.yml:22`). Week 2 work that imports `pricing_engine` will need a cross-repo PAT or deploy key first — don't "fix" the `submodules: false` line until that's provisioned.
+- **Vertex flag is set in `get_settings()`** before any `google.genai` import (`shared/config.py:62`). Don't call `genai.Client(...)` at module import time.
+
 ## Don't
 
 - Don't add new SDKs or model providers without updating the plan and `pyproject.toml` together.

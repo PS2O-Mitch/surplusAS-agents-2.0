@@ -20,9 +20,12 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import asyncpg
 from google.cloud.sql.connector import Connector, IPTypes
+
+if TYPE_CHECKING:
+    import asyncpg
 
 PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "ps2o-surplusas-api")
 INSTANCE = os.environ.get(
