@@ -1,0 +1,78 @@
+# Cloud Build pipeline for the Pricing agent.
+#
+# Triggers on changes under `agents/pricing/**`, `shared/**`, or
+# `evals/golden/pricing.jsonl`. The trigger config (path filter) lives in
+# Terraform, not here.
+#
+# Six steps, each deterministic and CI-cacheable. The deploy step reuses
+# `vertexai.agent_engines.create()` via `scripts/deploy_agent.py`; the
+# trigger's runtime SA must have the `roles/aiplatform.user` binding the
+# Agent Engine deploy needs.
+#
+# This file is consumed verbatim by Cloud Build. Keep it free of Bash-isms
+# that don't work in `gcr.io/cloud-builders/*` images.
+
+steps:
+  - id: install
+    name: ghcr.io/astral-sh/uv:0.5.5-python3.12-bookworm
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        uv sync --frozen --extra dev
+
+  - id: lint
+    name: ghcr.io/astral-sh/uv:0.5.5-python3.12-bookworm
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        uv run ruff check .
+
+  - id: typecheck
+    name: ghcr.io/astral-sh/uv:0.5.5-python3.12-bookworm
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        uv run mypy agents/pricing shared
+
+  - id: unit-tests
+    name: ghcr.io/astral-sh/uv:0.5.5-python3.12-bookworm
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        uv run pytest tests/unit/test_pricing_engine_adapter.py \
+          --cov=agents.pricing.engine_adapter \
+          --cov-fail-under=100 \
+          -v
+
+  - id: evals
+    name: ghcr.io/astral-sh/uv:0.5.5-python3.12-bookworm
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        uv run python -m evals.runner --agent pricing --threshold 0.85 --mode local
+
+  - id: deploy
+    name: ghcr.io/astral-sh/uv:0.5.5-python3.12-bookworm
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        uv run python -m scripts.deploy_agent --name pricing
+
+# Logs to GCS; the trigger SA needs roles/logging.logWriter.
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_STANDARD_2
+
+timeout: 1800s
