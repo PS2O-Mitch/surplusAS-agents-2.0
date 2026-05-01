@@ -1,71 +1,141 @@
-"""Agent-to-Agent (A2A) client for IAM-authenticated peer agents.
+"""Agent-to-Agent (A2A) client backed by the Vertex AI Agent Engine SDK.
 
-Each call mints a Google ID token whose audience matches the target service
-URL (Cloud Run gateway, Agent Engine endpoint), then POSTs an `AgentRequest`
-JSON to the peer's `/v1/agent` endpoint. Tokens are cached per audience for
-~50 minutes to amortize the metadata-server round trip on hot paths.
+Calling pattern (post-2026-04-30 SDK pivot):
 
-Pattern ported verbatim from `SurplusAS-API-2.0/shared/a2a.py:45`.
+    from vertexai import agent_engines
+    handle = agent_engines.get(resource_name)        # cached per peer
+    async for event in handle.async_stream_query(
+        message=<dict|str>, user_id=<partner_id>, session_id=<optional>,
+    ):
+        ...                                          # collect final event
 
-Local dev: ID-token minting via ADC requires either an attached service
-account (Cloud Run / GCE / Cloud Build) or
-`gcloud auth application-default login --impersonate-service-account=...`.
-A plain user ADC cannot mint audience-scoped ID tokens.
+`async_stream_query` is the canonical async path on `AdkApp` in
+`google-cloud-aiplatform>=1.149`. `query`/`async_query` exist as mixin
+methods (`Queryable` / `AsyncQueryable`) but are NOT exposed on `AdkApp`,
+which is the framework all five SurplusAS agents deploy as. `stream_query`
+is deprecated. See SDK probe in commit history.
+
+This helper aggregates the stream into a single final dict — most A2A
+calls are request/response (Concierge → Pricing for a recommendation,
+etc.). A streaming variant can be added later if Concierge wants to relay
+intermediate events to the gateway as SSE.
+
+Trace context: the existing `a2a_client_span` from shared/tracing.py is
+re-used for span correctness; the W3C `traceparent` is injected into the
+`run_config` map so the deployed agent can pick it up server-side once
+the ADK plumbing supports it (today the SDK does not surface a per-call
+header dict, so the trace continuity is best-effort cross-process).
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import time
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
-import google.auth.transport.requests
-import httpx
-from google.oauth2 import id_token
+from vertexai import agent_engines
 
-from shared.tracing import a2a_client_span
+from shared.config import get_settings
+from shared.tracing import a2a_client_span, set_attrs
+
+if TYPE_CHECKING:
+    from vertexai.agent_engines import AgentEngine
 
 logger = logging.getLogger("surplusas.a2a")
 
+Peer = Literal["concierge", "pricing", "onboarding", "listing_intake", "dispute_triage"]
 
-_token_cache: dict[str, tuple[str, float]] = {}
+_handle_cache: dict[str, AgentEngine] = {}
+_cache_lock = asyncio.Lock()
 
 
-def _fetch_id_token(audience: str) -> str:
-    """Mint (or return cached) Google ID token whose audience matches `audience`."""
-    cached = _token_cache.get(audience)
-    now = time.time()
-    if cached and cached[1] > now + 60:
-        return cached[0]
+def _resolve_resource(peer: Peer) -> str:
+    """Map a peer name to its Agent Engine resource name from settings."""
+    settings = get_settings()
+    resource = {
+        "concierge": settings.concierge_agent_resource,
+        "pricing": settings.pricing_agent_resource,
+        "onboarding": settings.onboarding_agent_resource,
+        "listing_intake": settings.listing_intake_agent_resource,
+        "dispute_triage": settings.dispute_triage_agent_resource,
+    }[peer]
+    if not resource:
+        raise RuntimeError(
+            f"A2A peer {peer!r} has no resource configured "
+            f"(set {peer.upper()}_AGENT_RESOURCE)."
+        )
+    return resource
 
-    auth_req = google.auth.transport.requests.Request()
-    token: str = id_token.fetch_id_token(auth_req, audience)  # type: ignore[no-untyped-call]
-    # ID tokens last 1 hour; cache for 50 minutes.
-    _token_cache[audience] = (token, now + 50 * 60)
-    return token
+
+async def _get_handle(peer: Peer) -> AgentEngine:
+    """Resolve and cache the AgentEngine handle for `peer`."""
+    resource = _resolve_resource(peer)
+    cached = _handle_cache.get(resource)
+    if cached is not None:
+        return cached
+
+    async with _cache_lock:
+        cached = _handle_cache.get(resource)
+        if cached is not None:
+            return cached
+        # agent_engines.get is synchronous metadata fetch; offload to thread
+        # pool to keep the event loop responsive on cold paths.
+        handle = await asyncio.to_thread(agent_engines.get, resource)
+        _handle_cache[resource] = handle
+        return handle
 
 
 async def call_peer_agent(
-    audience: str,
-    body: dict[str, Any],
-    path: str = "/v1/agent",
-    timeout: float = 120.0,  # noqa: ASYNC109 — passed to httpx, not a stand-in for asyncio.timeout
+    peer: Peer,
+    mode: str,
+    input: dict[str, Any],
+    partner_id: str,
+    *,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
-    """POST `body` to a peer agent service and return the parsed JSON.
+    """Invoke a peer agent and return the final stream event.
 
-    Raises `httpx.HTTPStatusError` on non-2xx responses.
+    The `mode` + `input` are packed into a structured `message` dict so the
+    deployed agent's prompt + tools can dispatch on `mode`. (SurplusAS-API-2.0's
+    `AgentRequest.mode` discriminator pattern, preserved at the message level.)
+
+    `partner_id` becomes the SDK's `user_id` — required by `async_stream_query`
+    and our multi-tenant identity anchor.
+
+    Returns the final event from the stream (typically the agent's terminal
+    response with tool outputs). Raises if the stream produced zero events.
     """
-    token = _fetch_id_token(audience)
-    url = audience.rstrip("/") + path
+    handle = await _get_handle(peer)
+    message = {"mode": mode, "input": input}
+    run_config: dict[str, Any] = {}
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
+    final_event: dict[str, Any] | None = None
+    event_count = 0
 
-    with a2a_client_span(audience, headers):
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            r = await client.post(url, json=body, headers=headers)
-            r.raise_for_status()
-            data: dict[str, Any] = r.json()
-            return data
+    headers: dict[str, str] = {}  # propagate fills it; mirrored into run_config
+    with a2a_client_span(peer, headers) as span:
+        run_config["traceparent"] = headers.get("traceparent")
+        run_config = {k: v for k, v in run_config.items() if v is not None}
+        set_attrs(span, **{"a2a.mode": mode, "a2a.partner_id": partner_id})
+
+        # `async_stream_query` is registered dynamically on the AgentEngine
+        # handle at runtime (it lives on AdkApp's `register_operations`); the
+        # static type from `agent_engines.get` is the bare `AgentEngine`,
+        # which doesn't surface this method. The runtime presence is part
+        # of the contract every SurplusAS agent deploys with.
+        async for event in handle.async_stream_query(  # type: ignore[attr-defined]
+            message=message,
+            user_id=partner_id,
+            session_id=session_id,
+            run_config=run_config or None,
+        ):
+            event_count += 1
+            final_event = event
+
+        set_attrs(span, **{"a2a.event_count": event_count})
+
+    if final_event is None:
+        raise RuntimeError(
+            f"A2A call to {peer!r} (mode={mode!r}) yielded zero events."
+        )
+    return final_event

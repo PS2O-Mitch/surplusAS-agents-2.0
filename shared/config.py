@@ -42,11 +42,14 @@ class Settings(BaseSettings):
     db_password: str = ""
 
     # --- Inter-agent A2A peers -----------------------------------------
-    concierge_agent_url: str = ""
-    pricing_agent_url: str = ""
-    onboarding_agent_url: str = ""
-    listing_intake_agent_url: str = ""
-    dispute_triage_agent_url: str = ""
+    # Vertex AI Agent Engine resource names, e.g.
+    # projects/<num>/locations/us-central1/reasoningEngines/<id>.
+    # Populated by Terraform outputs after each agent is deployed.
+    concierge_agent_resource: str = ""
+    pricing_agent_resource: str = ""
+    onboarding_agent_resource: str = ""
+    listing_intake_agent_resource: str = ""
+    dispute_triage_agent_resource: str = ""
 
     # --- Webhooks -------------------------------------------------------
     webhook_signing_key: str = ""

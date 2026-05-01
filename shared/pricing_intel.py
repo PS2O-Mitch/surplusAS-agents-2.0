@@ -26,16 +26,20 @@ try:
     from pricing_engine.formula import recommend
     from pricing_engine.schemas import (
         FORMULA_VERSION,
+        VALID_CATEGORIES,
         AppliedPressures,
         Coefficients,
+        PiecewiseCurve,
         PricingInput,
         Recommendation,
     )
 
     __all__ = [
         "FORMULA_VERSION",
+        "VALID_CATEGORIES",
         "AppliedPressures",
         "Coefficients",
+        "PiecewiseCurve",
         "PricingInput",
         "Recommendation",
         "load_latest",
