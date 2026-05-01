@@ -75,28 +75,34 @@ async def close_pool() -> None:
         _connector = None
 
 
-def _require_pool() -> asyncpg.Pool:
+def require_pool() -> asyncpg.Pool:
+    """Return the process-wide pool. Raises if `init_pool()` hasn't run yet.
+
+    Public on purpose: every caller that needs a connection (the pricing
+    adapter, the gateway routes, ad-hoc scripts) goes through here so the
+    "you forgot to initialise the pool" error is uniform across the repo.
+    """
     if _pool is None:
         raise RuntimeError("DB pool not initialised; call init_pool() at startup.")
     return _pool
 
 
 async def fetch_one(query: str, *args: Any) -> dict[str, Any] | None:
-    pool = _require_pool()
+    pool = require_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(query, *args)
         return dict(row) if row else None
 
 
 async def fetch_all(query: str, *args: Any) -> list[dict[str, Any]]:
-    pool = _require_pool()
+    pool = require_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(query, *args)
         return [dict(r) for r in rows]
 
 
 async def execute(query: str, *args: Any) -> str:
-    pool = _require_pool()
+    pool = require_pool()
     async with pool.acquire() as conn:
         result: str = await conn.execute(query, *args)
         return result

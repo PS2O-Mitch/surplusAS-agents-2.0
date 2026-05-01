@@ -78,7 +78,11 @@ class RecommendationLogEntry(BaseModel):
     anchor_p50: Decimal
     anchor_source: str
     anchor_region: str
-    applied_pressures: dict[str, float]
+    # `float | bool` preserves the engine's `clamped_to_floor` /
+    # `clamped_to_retail` flags through `model_dump(mode="json")`. A flat
+    # `dict[str, float]` here would coerce `False` → `0.0` and lose the
+    # clamping signal — guardrail #2 ("verbatim round-trip") demands we keep them.
+    applied_pressures: dict[str, float | bool]
     formula_version: str
     coefficients_version: int
     replay_of: UUID | None = None
