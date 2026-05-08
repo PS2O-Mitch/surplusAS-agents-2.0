@@ -39,3 +39,9 @@ variable "webhook_signing_key" {
   description = "Initial HMAC signing key for outbound webhooks. Stored in Secret Manager; rotate before launch."
   sensitive   = true
 }
+
+variable "github_submodule_pat" {
+  type        = string
+  description = "GitHub fine-grained PAT with read access to surplusAS-pricing-intel. Used by Cloud Build pipelines to fetch the vendor/surplusas-pricing submodule. Stored in Secret Manager; rotate via gcloud."
+  sensitive   = true
+}

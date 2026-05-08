@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -59,13 +60,26 @@ def deploy(name: str) -> str:
     # Late import — vertexai pulls in heavy auth/genai code. Keep CLI startup snappy.
     import vertexai
     from vertexai import agent_engines
+    from vertexai.agent_engines.templates.adk import AdkApp
 
     project = manifest.get("env", {}).get("GOOGLE_CLOUD_PROJECT", "ps2o-surplusas-api")
     location = manifest.get("region", "us-central1")
     display_name = manifest["displayName"]
     service_account = manifest["serviceAccount"]
 
-    vertexai.init(project=project, location=location)
+    # Agent Engine uploads the `extra_packages` tarball to GCS before building the
+    # container, so `vertexai.init` requires a staging bucket. Override with
+    # AGENT_STAGING_BUCKET if you keep one per env; the default is project-wide.
+    # Bootstrapped once with:
+    #   gcloud storage buckets create gs://ps2o-surplusas-agents-staging \
+    #     --project=ps2o-surplusas-api --location=us-central1 \
+    #     --uniform-bucket-level-access
+    staging_bucket = os.environ.get(
+        "AGENT_STAGING_BUCKET",
+        "gs://ps2o-surplusas-agents-staging",
+    )
+
+    vertexai.init(project=project, location=location, staging_bucket=staging_bucket)
 
     # `requirements` are deduced from the deployed image's pyproject in CI;
     # for local dev deploys we hand them in explicitly so the engine venv
@@ -96,11 +110,25 @@ def deploy(name: str) -> str:
     # `extra_packages` are paths to local packages to vendor into the deployed
     # bundle. We need the whole repo so the deployed agent can resolve
     # `from shared...` and `from pricing_engine...` imports.
+    #
+    # IMPORTANT: paths must be RELATIVE to the current working directory.
+    # The SDK calls `tarfile.add(path)` and uses the path verbatim as the
+    # arcname; absolute paths get baked into the tarball (e.g. on Windows you
+    # end up with `C:/Users/.../agents/__init__.py` inside the tarball, which
+    # extracts to nowhere useful and breaks `import agents.pricing.tools` at
+    # cloudpickle-load time on the remote engine. So we chdir to REPO_ROOT.
+    os.chdir(REPO_ROOT)
     extra_packages = [
-        str(REPO_ROOT / "agents"),
-        str(REPO_ROOT / "shared"),
-        str(REPO_ROOT / "vendor" / "surplusas-pricing"),
+        "agents",
+        "shared",
+        "vendor/surplusas-pricing",
     ]
+
+    # Wrap in AdkApp ourselves with an explicit app_name. Otherwise AdkApp's
+    # set_up() falls back to GOOGLE_CLOUD_AGENT_ENGINE_ID (a numeric resource
+    # id) which fails ADK's `App.name` validator (isidentifier() == False on
+    # purely-numeric strings) — Pydantic ValidationError at engine startup.
+    adk_app = AdkApp(agent=agent_obj, app_name=name, enable_tracing=True)
 
     print(
         f"Deploying agent={name} display_name={display_name} "
@@ -108,7 +136,7 @@ def deploy(name: str) -> str:
     )
 
     remote = agent_engines.create(
-        agent_obj,  # type: ignore[arg-type]  # AdkApp accepts any Agent
+        adk_app,  # type: ignore[arg-type]
         display_name=display_name,
         requirements=requirements,
         extra_packages=extra_packages,

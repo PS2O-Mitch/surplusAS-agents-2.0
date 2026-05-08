@@ -1,4 +1,4 @@
-# Copy to terraform.tfvars and fill in. Both values land in Secret Manager.
+# Copy to terraform.tfvars and fill in. All sensitive values land in Secret Manager.
 # DO NOT commit the populated terraform.tfvars file.
 
 project_id              = "ps2o-surplusas-api"
@@ -11,3 +11,8 @@ agents_app_db_user      = "surplusas_agents_app"
 #   python -c "import secrets; print(secrets.token_urlsafe(48))"
 agents_app_db_password = "REPLACE_ME"
 webhook_signing_key    = "REPLACE_ME"
+
+# GitHub fine-grained PAT scoped to read PS2O-Mitch/surplusAS-pricing-intel.
+# Used by Cloud Build to fetch the vendor/surplusas-pricing submodule.
+# Mirror of the GitHub Actions SUBMODULE_TOKEN secret.
+github_submodule_pat = "REPLACE_ME"

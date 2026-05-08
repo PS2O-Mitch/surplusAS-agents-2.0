@@ -15,6 +15,7 @@ arrive in later weeks as the runtime targets stabilise.
 | `variables.tf` | Project, region, Cloud SQL instance/db names, secrets. |
 | `iam.tf` | 6 service accounts (`gateway-sa`, 5 `<agent>-agent-sa`), shared role bindings, A2A impersonation chain. |
 | `secret_manager.tf` | `db-password-agents` and `webhook-signing-key` secrets + per-SA accessor grants. |
+| `cloudbuild_secrets.tf` | `github-submodule-pat` secret for Cloud Build to fetch the private `vendor/surplusas-pricing` submodule. |
 | `cloud_sql.tf` | `surplusas_agents_app` user on the **existing** `surplusas-db` instance (does NOT create the instance). |
 | `outputs.tf` | SA emails, secret ids, Cloud SQL connection name. |
 | `terraform.tfvars.example` | Template; copy to `terraform.tfvars` and fill in (not committed). |
@@ -74,3 +75,25 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA agents
 GRANT SELECT ON public.partner_keys, public.pricing_coefficients, public.reference_prices
     TO surplusas_agents_app;
 ```
+
+## Cloud Build submodule PAT
+
+The Cloud Build pipelines for the Pricing and Onboarding agents fetch the
+private `vendor/surplusas-pricing` submodule using a GitHub fine-grained
+PAT (scoped to read `PS2O-Mitch/surplusAS-pricing-intel`). Terraform
+creates the `github-submodule-pat` Secret Manager resource and grants the
+project's default Cloud Build runtime SA (`<project_number>@cloudbuild.gserviceaccount.com`)
+accessor on it; the pipelines pull it via `availableSecrets`. After
+`terraform apply`, seed the secret value (the `REPLACE_ME` placeholder
+seeded by Terraform is not a usable token):
+
+```bash
+# Paste the PAT (no trailing newline) — same value used for the
+# GitHub Actions SUBMODULE_TOKEN secret.
+printf 'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' \
+  | gcloud secrets versions add github-submodule-pat \
+      --project=ps2o-surplusas-api \
+      --data-file=-
+```
+
+Rotate the same way; Terraform tracks the secret resource, not the version.
