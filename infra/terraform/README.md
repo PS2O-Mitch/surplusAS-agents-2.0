@@ -7,18 +7,18 @@ arrive in later weeks as the runtime targets stabilise.
 
 ## What's here (Week 1)
 
-| File | Purpose |
-| - | - |
-| `versions.tf` | Provider pins (`google` / `google-beta` ~> 6.10, terraform >= 1.9.0). |
-| `backend.tf` | GCS-backed state. Bucket bootstrapped manually (see comments inside). |
-| `main.tf` | Provider config + project-API enablement. |
-| `variables.tf` | Project, region, Cloud SQL instance/db names, secrets. |
-| `iam.tf` | 6 service accounts (`gateway-sa`, 5 `<agent>-agent-sa`), shared role bindings, A2A impersonation chain. |
-| `secret_manager.tf` | `db-password-agents` and `webhook-signing-key` secrets + per-SA accessor grants. |
-| `cloudbuild_secrets.tf` | `github-submodule-pat` secret for Cloud Build to fetch the private `vendor/surplusas-pricing` submodule. |
-| `cloud_sql.tf` | `surplusas_agents_app` user on the **existing** `surplusas-db` instance (does NOT create the instance). |
-| `outputs.tf` | SA emails, secret ids, Cloud SQL connection name. |
-| `terraform.tfvars.example` | Template; copy to `terraform.tfvars` and fill in (not committed). |
+| File                       | Purpose                                                                                                  |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `versions.tf`              | Provider pins (`google` / `google-beta` ~> 6.10, terraform >= 1.9.0).                                    |
+| `backend.tf`               | GCS-backed state. Bucket bootstrapped manually (see comments inside).                                    |
+| `main.tf`                  | Provider config + project-API enablement.                                                                |
+| `variables.tf`             | Project, region, Cloud SQL instance/db names, secrets.                                                   |
+| `iam.tf`                   | 6 service accounts (`gateway-sa`, 5 `<agent>-agent-sa`), shared role bindings, A2A impersonation chain.  |
+| `secret_manager.tf`        | `db-password-agents` and `webhook-signing-key` secrets + per-SA accessor grants.                         |
+| `cloudbuild_secrets.tf`    | `github-submodule-pat` secret for Cloud Build to fetch the private `vendor/surplusas-pricing` submodule. |
+| `cloud_sql.tf`             | `surplusas_agents_app` user on the **existing** `surplusas-db` instance (does NOT create the instance).  |
+| `outputs.tf`               | SA emails, secret ids, Cloud SQL connection name.                                                        |
+| `terraform.tfvars.example` | Template; copy to `terraform.tfvars` and fill in (not committed).                                        |
 
 ## What's NOT here yet
 
@@ -30,9 +30,10 @@ arrive in later weeks as the runtime targets stabilise.
 
 ```bash
 # 1. Create the state bucket (one-shot, manual)
-gcloud storage buckets create gs://ps2o-surplusas-tf-state \
-  --project=ps2o-surplusas-api \
-  --location=us-central1 \
+# Note: If using PowerShell on Windows, use ` instead of \ for line continuation.
+gcloud storage buckets create gs://ps2o-surplusas-tf-state `
+  --project=ps2o-surplusas-api `
+  --location=us-central1 `
   --uniform-bucket-level-access
 gcloud storage buckets update gs://ps2o-surplusas-tf-state --versioning
 
@@ -41,8 +42,8 @@ gcloud auth application-default login
 
 # 3. Init backend
 cd infra/terraform
-terraform init \
-  -backend-config="bucket=ps2o-surplusas-tf-state" \
+terraform init `
+  -backend-config="bucket=ps2o-surplusas-tf-state" `
   -backend-config="prefix=agents/"
 
 # 4. Fill in tfvars
@@ -60,8 +61,12 @@ Run the schema bootstrap against the Cloud SQL instance:
 
 ```bash
 # Connect with the Cloud SQL Auth Proxy or `gcloud sql connect`
-gcloud sql connect surplusas-db --user=postgres --database=surplusas \
-  --project=ps2o-surplusas-api < ../../shared/db_schema.sql
+# Bash:
+# gcloud sql connect surplusas-db --user=postgres --database=surplusas \
+#   --project=ps2o-surplusas-api < ../../shared/db_schema.sql
+# PowerShell:
+Get-Content ../../shared/db_schema.sql | gcloud sql connect surplusas-db --user=postgres --database=surplusas `
+  --project=ps2o-surplusas-api
 ```
 
 Then grant the `surplusas_agents_app` role appropriate access:

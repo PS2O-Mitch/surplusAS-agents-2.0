@@ -52,6 +52,13 @@ tmp/
 infra/terraform/terraform.tfvars
 infra/terraform/.terraform/
 infra/terraform/*.tfstate*
+infra/terraform/tfplan
+
+# Local working files
+.claude/
+Google for Startups*.pdf
+familiarize-yourself-*.md
+deploy_*.log
 
 # graphify
 graphify_local/

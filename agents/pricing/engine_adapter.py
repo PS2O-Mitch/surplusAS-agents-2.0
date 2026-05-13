@@ -29,7 +29,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from shared.db import require_pool
+from shared.db import init_pool
 from shared.pricing_intel import (
     PricingInput,
     load_latest,
@@ -199,7 +199,7 @@ async def price_listing(
     inserted row's id becomes the listing's `initial_recommendation_id` /
     `current_recommendation_id`.
     """
-    pool = require_pool()
+    pool = await init_pool()
     async with pool.acquire() as conn:
         (
             price,
@@ -267,7 +267,7 @@ async def replay_recommendation(recommendation_id: UUID) -> RecommendationLogEnt
     time, inserts a new row with `replay_of=<recommendation_id>`. The
     original row is never UPDATEd (guardrail #3).
     """
-    pool = require_pool()
+    pool = await init_pool()
     async with pool.acquire() as conn:
         original = await conn.fetchrow(
             "SELECT listing_id, merchant_id, partner_id, pricing_input "

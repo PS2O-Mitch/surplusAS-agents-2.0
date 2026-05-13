@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -162,8 +162,17 @@ def fake_conn() -> _CapturingConn:
 
 @pytest.fixture(autouse=True)
 def _patch_pool(monkeypatch: pytest.MonkeyPatch, fake_conn: _CapturingConn) -> None:
-    """Replace `require_pool` so tests never touch real DB infra."""
-    monkeypatch.setattr(engine_adapter, "require_pool", lambda: _FakePool(fake_conn))
+    """Replace `init_pool` so tests never touch real DB infra.
+
+    `init_pool` is async in `shared.db`, so the patch must return an
+    awaitable that yields the fake pool. AsyncMock makes the call
+    `await init_pool()` resolve to `_FakePool(fake_conn)`.
+    """
+    monkeypatch.setattr(
+        engine_adapter,
+        "init_pool",
+        AsyncMock(return_value=_FakePool(fake_conn)),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +330,9 @@ async def test_replay_recommendation_writes_new_row_with_replay_of_set(
         "pricing_input": pricing_input_dict,  # asyncpg returns JSONB as dict
     }
     fake_conn = _CapturingConn(seed_row=seed)
-    monkeypatch.setattr(engine_adapter, "require_pool", lambda: _FakePool(fake_conn))
+    monkeypatch.setattr(
+        engine_adapter, "init_pool", AsyncMock(return_value=_FakePool(fake_conn))
+    )
     monkeypatch.setattr(
         engine_adapter, "lookup_anchor", _async_return(_make_anchor())
     )
@@ -366,7 +377,9 @@ async def test_replay_recommendation_handles_jsonb_returned_as_str(
         "pricing_input": pricing_input_str,
     }
     fake_conn = _CapturingConn(seed_row=seed)
-    monkeypatch.setattr(engine_adapter, "require_pool", lambda: _FakePool(fake_conn))
+    monkeypatch.setattr(
+        engine_adapter, "init_pool", AsyncMock(return_value=_FakePool(fake_conn))
+    )
     monkeypatch.setattr(
         engine_adapter, "lookup_anchor", _async_return(_make_anchor())
     )
@@ -385,7 +398,9 @@ async def test_replay_recommendation_raises_when_original_not_found(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_conn = _CapturingConn(seed_row=None)  # SELECT returns nothing
-    monkeypatch.setattr(engine_adapter, "require_pool", lambda: _FakePool(fake_conn))
+    monkeypatch.setattr(
+        engine_adapter, "init_pool", AsyncMock(return_value=_FakePool(fake_conn))
+    )
 
     missing_id = uuid4()
     with pytest.raises(engine_adapter.RecommendationNotFoundError):
@@ -403,7 +418,9 @@ async def test_replay_recommendation_propagates_no_anchor(
         "pricing_input": _make_pricing_input().model_dump(mode="json"),
     }
     fake_conn = _CapturingConn(seed_row=seed)
-    monkeypatch.setattr(engine_adapter, "require_pool", lambda: _FakePool(fake_conn))
+    monkeypatch.setattr(
+        engine_adapter, "init_pool", AsyncMock(return_value=_FakePool(fake_conn))
+    )
     monkeypatch.setattr(engine_adapter, "lookup_anchor", _async_return(None))
 
     with pytest.raises(engine_adapter.NoAnchorError):
@@ -420,7 +437,9 @@ async def test_replay_recommendation_propagates_no_coefficients(
         "pricing_input": _make_pricing_input().model_dump(mode="json"),
     }
     fake_conn = _CapturingConn(seed_row=seed)
-    monkeypatch.setattr(engine_adapter, "require_pool", lambda: _FakePool(fake_conn))
+    monkeypatch.setattr(
+        engine_adapter, "init_pool", AsyncMock(return_value=_FakePool(fake_conn))
+    )
     monkeypatch.setattr(
         engine_adapter, "lookup_anchor", _async_return(_make_anchor())
     )

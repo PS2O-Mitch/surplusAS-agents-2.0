@@ -32,6 +32,34 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 VALID_AGENTS = ("concierge", "pricing", "onboarding", "listing_intake", "dispute_triage")
 
+# Mapping from the env-var name an agent expects (manifest `envFromSecretManager`)
+# to the Secret Manager secret id created by Terraform (infra/terraform/secret_manager.tf).
+# Add a new row when introducing a new secret-backed env var; the deploy will
+# fail loudly if a manifest references an env name that isn't mapped here.
+SECRET_ID_MAP = {
+    "DB_PASSWORD": "db-password-agents",
+    "WEBHOOK_SIGNING_KEY": "webhook-signing-key",
+}
+
+# Vertex Agent Engine rejects these env names (it auto-injects them into the
+# deployed container). Including them in `env_vars` triggers:
+#   400 Environment variable name '<NAME>' is reserved.
+# We strip them here so the manifest stays declarative without a separate
+# "things Vertex provides" list — the agent still sees them at runtime.
+_VERTEX_RESERVED_ENV = frozenset(
+    {
+        "GOOGLE_CLOUD_PROJECT",
+        "GOOGLE_CLOUD_LOCATION",
+        "GOOGLE_GENAI_USE_VERTEXAI",
+        "GOOGLE_CLOUD_AGENT_ENGINE_ID",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "PORT",
+        "K_SERVICE",
+        "K_REVISION",
+        "K_CONFIGURATION",
+    }
+)
+
 
 def _load_manifest(name: str) -> dict[str, Any]:
     manifest_path = REPO_ROOT / "agents" / name / "manifest.yaml"
@@ -74,6 +102,13 @@ def deploy(name: str) -> str:
     #   gcloud storage buckets create gs://ps2o-surplusas-agents-staging \
     #     --project=ps2o-surplusas-api --location=us-central1 \
     #     --uniform-bucket-level-access
+    # DO NOT run two `deploy_agent.py` invocations in parallel. The SDK writes
+    # `agent_engine.pkl` and `dependencies.tar.gz` to a fixed path under the staging
+    # bucket; concurrent deploys overwrite each other's pickle and both engines end
+    # up loading whichever was uploaded last. Vertex's `staging_bucket` arg accepts
+    # only a plain bucket name (no path prefix), so per-agent isolation requires
+    # a separate bucket per agent — not worth the IAM/Terraform churn for a 5-agent
+    # repo. Run deploys one at a time. Observed 2026-05-12.
     staging_bucket = os.environ.get(
         "AGENT_STAGING_BUCKET",
         "gs://ps2o-surplusas-agents-staging",
@@ -130,10 +165,43 @@ def deploy(name: str) -> str:
     # purely-numeric strings) — Pydantic ValidationError at engine startup.
     adk_app = AdkApp(agent=agent_obj, app_name=name, enable_tracing=True)
 
+    # Build the env_vars dict the SDK forwards into the deployed container's
+    # process environment. Plain values from manifest.env, SecretRef-backed
+    # values from manifest.envFromSecretManager (resolved via SECRET_ID_MAP).
+    # The agent's pydantic-settings reads these the same way it reads .env in
+    # local dev, so shared/config.py needs no changes.
+    env_vars: dict[str, Any] = {}
+    skipped_reserved: list[str] = []
+    for env_key, env_value in (manifest.get("env") or {}).items():
+        if env_key in _VERTEX_RESERVED_ENV:
+            # Vertex Agent Engine injects these itself; including them is a 400.
+            skipped_reserved.append(env_key)
+            continue
+        # YAML loader parses unquoted "true"/"8080" as bool/int — normalise
+        # to str because the SDK's EnvVar proto requires a string value.
+        env_vars[env_key] = str(env_value)
+    for secret_env in manifest.get("envFromSecretManager") or []:
+        if secret_env in _VERTEX_RESERVED_ENV:
+            skipped_reserved.append(secret_env)
+            continue
+        if secret_env not in SECRET_ID_MAP:
+            raise KeyError(
+                f"manifest declares envFromSecretManager={secret_env!r} but no "
+                f"Secret Manager mapping is registered in scripts/deploy_agent.py "
+                f"(SECRET_ID_MAP)"
+            )
+        env_vars[secret_env] = {
+            "secret": SECRET_ID_MAP[secret_env],
+            "version": "latest",
+        }
+    if skipped_reserved:
+        print(f"skipped reserved env keys (auto-injected by Vertex): {sorted(skipped_reserved)}")
+
     print(
         f"Deploying agent={name} display_name={display_name} "
         f"project={project} location={location} sa={service_account}"
     )
+    print(f"env_vars: {sorted(env_vars.keys())}")
 
     remote = agent_engines.create(
         adk_app,  # type: ignore[arg-type]
@@ -141,6 +209,7 @@ def deploy(name: str) -> str:
         requirements=requirements,
         extra_packages=extra_packages,
         service_account=service_account,
+        env_vars=env_vars,
     )
 
     resource_name: str = remote.resource_name  # type: ignore[attr-defined]

@@ -1,10 +1,17 @@
 """Minimal smoke test for the deployed Pricing agent.
 
 Calls `async_stream_query` against the resource in `PRICING_AGENT_RESOURCE`
-and streams events. First mode (`--ping`) sends a trivial question that the
-agent can answer without tool invocation; the second mode (default) sends a
-real `price_listing` envelope so the engine_adapter / DB / pricing engine
-chain is exercised end-to-end.
+and streams events. First mode (`--ping`) sends a trivial question the
+agent answers without tool use; the second mode (default) sends a
+natural-language prompt that nudges the LLM to invoke `price_listing` with
+specific parameters — which exercises the engine_adapter / DB / pricing
+engine chain end-to-end.
+
+Note: ADK's Runner accepts a string (auto-wrapped to user content) or a
+`{role, parts: [...]}` dict. Sending custom-shape envelopes like
+`{mode, input}` produces a 498 validation error on `Content` — there is no
+direct-route-to-tool API exposed via `async_stream_query`; the LLM is
+always in the loop. So tool exercise here goes through the model.
 
 Prints every streamed event so we can see what the deployed agent produces
 before the gateway reads it.
@@ -56,18 +63,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.ping:
         message = "Say hello and tell me your role in one sentence."
     else:
-        message = {
-            "mode": "price_listing",
-            "input": {
-                "category": "prepared_meal",
-                "region": "US-FL-Hillsborough",
-                "units": 1,
-                "retail_value": 12.00,
-                "hours_until_expiry": 4.0,
-                "now_hour": 18,
-                "merchant_floor_pct": 0.10,
-            },
-        }
+        # Natural-language prompt the LLM should translate into a single
+        # price_listing tool call. Every required arg is named in the
+        # text so the model has no excuse to omit one. partner_id is the
+        # demo key we issue in the seed data; if you change seed values,
+        # update this string too.
+        message = (
+            "Please price this listing using the price_listing tool. "
+            "Category: prepared_meal. Region: US-FL-Hillsborough. "
+            "Units: 1. Retail value: $12.00. Hours until expiry: 4.0. "
+            "Current hour (24h): 18. Merchant floor pct: 0.10. "
+            "Partner id: sk_demo_surplus_2026."
+        )
 
     asyncio.run(_run(resource, message, user_id="sk_demo_surplus_2026"))
     return 0

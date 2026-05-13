@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from shared.db import require_pool
+from shared.db import init_pool
 from shared.pricing_intel import PricingInput, lookup_anchor
 
 from .engine_adapter import (
@@ -47,7 +47,10 @@ async def lookup_anchor_tool(
     Useful when the merchant asks "what would this price at?" before they
     commit to a draft. Returns `{"status": "no_anchor"}` when no row exists.
     """
-    pool = require_pool()
+    # Lazy init: asyncpg pools are bound to the event loop that creates them,
+    # so the deployed agent can't pre-init in AdkApp.set_up() (different loop).
+    # init_pool() is idempotent (lock-guarded) — safe to call on every tool entry.
+    pool = await init_pool()
     async with pool.acquire() as conn:
         anchor = await lookup_anchor(
             conn, "postgres", category=category, region=region, tier=tier

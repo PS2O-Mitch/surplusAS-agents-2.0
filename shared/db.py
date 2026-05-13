@@ -19,18 +19,24 @@ from google.cloud.sql.connector import Connector, IPTypes
 from shared.config import get_settings
 
 _pool: asyncpg.Pool | None = None
-_connector: Connector | None = None
 _lock = asyncio.Lock()
 
 
-async def _create_connection() -> asyncpg.Connection:
-    """asyncpg connection factory backed by the Cloud SQL connector."""
-    global _connector
-    if _connector is None:
-        _connector = Connector()
+async def _create_connection(*args: Any, **kwargs: Any) -> asyncpg.Connection:
+    """asyncpg connection factory backed by the Cloud SQL connector.
 
+    asyncpg's `create_pool(connect=...)` invokes this callable with internal
+    kwargs (notably `loop=` on older asyncpg versions); accept and ignore
+    them so the factory stays decoupled from asyncpg's pool internals.
+
+    `Connector()` with no `loop=` arg spins up a new event loop on a daemon
+    thread (connector.py:144) — `connect_async` then refuses calls from any
+    other loop. We pin the connector to the factory's running loop so the
+    request loop and the connector's loop are the same object.
+    """
     settings = get_settings()
-    return await _connector.connect_async(
+    connector = Connector(loop=asyncio.get_running_loop())
+    return await connector.connect_async(
         settings.cloud_sql_instance,
         "asyncpg",
         user=settings.db_user,
@@ -66,13 +72,10 @@ async def init_pool_from_dsn(dsn: str) -> asyncpg.Pool:
 
 async def close_pool() -> None:
     """Tear down the pool. Idempotent; safe to call from FastAPI shutdown."""
-    global _pool, _connector
+    global _pool
     if _pool is not None:
         await _pool.close()
         _pool = None
-    if _connector is not None:
-        await _connector.close_async()
-        _connector = None
 
 
 def require_pool() -> asyncpg.Pool:
