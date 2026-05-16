@@ -112,6 +112,16 @@ class ListingDraft(BaseModel):
     image_uri: str | None = None
 
 
+class ValidationError(BaseModel):
+    field: str
+    error: str
+
+
+class ValidationResult(BaseModel):
+    status: Literal["ok", "validation_error"]
+    errors: list[ValidationError] = Field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # MerchantProfile (Onboarding's write target).
 # ---------------------------------------------------------------------------

@@ -16,6 +16,8 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from shared.pricing_intel import VALID_CATEGORIES
+
 
 def _decimal_or_none(value: Any) -> Decimal | None:
     if value is None:
@@ -66,3 +68,49 @@ async def parse_draft(
         "image_uri": image_uri,
     }
     return {"status": "ok", "draft": draft, "had_image": image_b64 is not None}
+
+
+async def validate_listing(*, draft: dict[str, Any]) -> dict[str, Any]:
+    """Validate a parsed ListingDraft against the schema + business rules.
+
+    Pure-function check — no DB access. Returns a list of {field, error}
+    so the model can fix problems one at a time.
+    """
+    errors: list[dict[str, str]] = []
+
+    title = draft.get("title")
+    if not title or not str(title).strip():
+        errors.append({"field": "title", "error": "title is required"})
+
+    category = draft.get("category")
+    if not category:
+        errors.append({"field": "category", "error": "category is required"})
+    elif category not in VALID_CATEGORIES:
+        errors.append({
+            "field": "category",
+            "error": f"unknown category {category!r}; "
+                     f"valid options are {sorted(VALID_CATEGORIES)}",
+        })
+
+    units = draft.get("units")
+    try:
+        units_int = int(units) if units is not None else 0
+    except (TypeError, ValueError):
+        units_int = 0
+    if units_int < 1:
+        errors.append({"field": "units", "error": "units must be >= 1"})
+
+    retail = _decimal_or_none(draft.get("retail_value"))
+    if retail is None or retail <= 0:
+        errors.append({"field": "retail_value",
+                       "error": "retail_value must be > 0"})
+
+    expiry = _decimal_or_none(draft.get("hours_until_expiry"))
+    if expiry is None or expiry < 0:
+        errors.append({"field": "hours_until_expiry",
+                       "error": "hours_until_expiry must be >= 0"})
+
+    return {
+        "status": "ok" if not errors else "validation_error",
+        "errors": errors,
+    }

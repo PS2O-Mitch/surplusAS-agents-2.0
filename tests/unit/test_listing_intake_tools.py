@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from agents.listing_intake.tools import parse_draft
+from agents.listing_intake.tools import parse_draft, validate_listing
 
 
 async def test_parse_draft_echoes_provided_fields() -> None:
@@ -52,3 +52,38 @@ async def test_parse_draft_with_only_text_returns_all_none_fields() -> None:
     assert draft["description"] is None
     assert draft["image_uri"] is None
     assert result["had_image"] is False
+
+
+async def test_validate_listing_ok_for_complete_draft() -> None:
+    draft = {
+        "title": "Day-old turkey sandwiches",
+        "description": "house-made, refrigerated",
+        "category": "prepared_meal",
+        "units": 10,
+        "retail_value": "12.00",
+        "hours_until_expiry": "4",
+        "image_uri": None,
+    }
+    result = await validate_listing(draft=draft)
+    assert result["status"] == "ok"
+    assert result["errors"] == []
+
+
+async def test_validate_listing_rejects_unknown_category() -> None:
+    draft = {
+        "title": "x", "category": "unicorn_food", "units": 1,
+        "retail_value": "10", "hours_until_expiry": "4",
+    }
+    result = await validate_listing(draft=draft)
+    assert result["status"] == "validation_error"
+    assert any(e["field"] == "category" for e in result["errors"])
+
+
+async def test_validate_listing_rejects_zero_units() -> None:
+    draft = {
+        "title": "x", "category": "prepared_meal", "units": 0,
+        "retail_value": "10", "hours_until_expiry": "4",
+    }
+    result = await validate_listing(draft=draft)
+    assert result["status"] == "validation_error"
+    assert any(e["field"] == "units" for e in result["errors"])
