@@ -135,6 +135,12 @@ async def request_anchor_price(
     Lateral edge per CLAUDE.md ("Listing Intake -> Pricing"). The draft hasn't
     been persisted yet — Pricing will write a `recommendation_log` row with
     `listing_id=NULL`, and `persist_listing` will then row-bind it.
+
+    Sends a plain-English request to Pricing (the shape its prompt knows how
+    to translate into `price_listing(...)`) and aggregates the stream. The
+    returned `narration` is Pricing's own summary of `applied_pressures` and
+    the recommended price; the Listing Intake model surfaces it verbatim
+    rather than re-deriving anything.
     """
     retail = _decimal_or_none(draft.get("retail_value"))
     expiry = _decimal_or_none(draft.get("hours_until_expiry"))
@@ -145,22 +151,17 @@ async def request_anchor_price(
                      "before pricing",
         }
 
-    pricing_input = {
-        "category": draft["category"],
-        "region": region,
-        "units": int(draft["units"]),
-        "retail_value": float(retail),
-        "hours_until_expiry": float(expiry),
-        "now_hour": int(now_hour),
-        "merchant_floor_pct": float(merchant_floor_pct),
-    }
-
-    return await a2a.call_peer_agent(
-        peer="pricing",
-        mode="price_listing",
-        input=pricing_input,
-        partner_id=partner_id,
+    user_message = (
+        "Please price this listing using the price_listing tool. "
+        f"Category: {draft['category']}. Region: {region}. "
+        f"Units: {int(draft['units'])}. Retail value: ${float(retail)}. "
+        f"Hours until expiry: {float(expiry)}. "
+        f"Current hour (24h): {int(now_hour)}. "
+        f"Merchant floor pct: {float(merchant_floor_pct)}. "
+        f"Partner id: {partner_id}."
     )
+    agg = await a2a.aggregate_peer_stream("pricing", user_message, partner_id)
+    return {"status": "ok", "narration": agg["narration"]}
 
 
 _VALID_STATUSES = {"draft", "draft_no_price", "published"}

@@ -109,35 +109,32 @@ async def test_validate_listing_rejects_missing_units() -> None:
     assert units_errors[0]["error"] == "units is required"
 
 
-async def test_request_anchor_price_calls_pricing_with_intake_input(
+async def test_request_anchor_price_sends_pricing_request_in_english(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, Any] = {}
 
-    async def fake_call_peer_agent(**kwargs: Any) -> dict[str, Any]:
-        captured.update(kwargs)
+    async def fake_aggregate(peer: Any, user_message: str, partner_id: str,
+                              *, session_id: Any = None) -> dict[str, Any]:
+        captured["peer"] = peer
+        captured["user_message"] = user_message
+        captured["partner_id"] = partner_id
         return {
-            "status": "ok",
-            "recommendation": {
-                "recommendation_id": "11111111-1111-1111-1111-111111111111",
-                "recommended_price": 7.25,
-                "applied_pressures": {"base": 0.10, "clamped_to_floor": False},
-                "formula_version": "v1",
-            },
+            "narration": "Priced at $7.25 — expiry pressure dominant at 0.30.",
+            "tool_calls": [], "event_count": 3,
         }
 
     from agents.listing_intake import tools as intake_tools
-    monkeypatch.setattr(intake_tools.a2a, "call_peer_agent", fake_call_peer_agent)
+    monkeypatch.setattr(intake_tools.a2a, "aggregate_peer_stream", fake_aggregate)
 
-    draft = {
-        "title": "Day-old sandwiches",
-        "category": "prepared_meal",
-        "units": 10,
-        "retail_value": "12.00",
-        "hours_until_expiry": "4",
-    }
     result = await intake_tools.request_anchor_price(
-        draft=draft,
+        draft={
+            "title": "Day-old sandwiches",
+            "category": "prepared_meal",
+            "units": 10,
+            "retail_value": "12.00",
+            "hours_until_expiry": "4",
+        },
         partner_id="sk_demo",
         region="US-FL-Hillsborough",
         merchant_floor_pct=0.10,
@@ -145,42 +142,45 @@ async def test_request_anchor_price_calls_pricing_with_intake_input(
     )
 
     assert captured["peer"] == "pricing"
-    assert captured["mode"] == "price_listing"
     assert captured["partner_id"] == "sk_demo"
-    pricing_input = captured["input"]
-    assert pricing_input["category"] == "prepared_meal"
-    assert pricing_input["region"] == "US-FL-Hillsborough"
-    assert pricing_input["units"] == 10
-    assert float(pricing_input["retail_value"]) == 12.00
-    assert float(pricing_input["hours_until_expiry"]) == 4.0
-    assert pricing_input["merchant_floor_pct"] == 0.10
-    assert pricing_input["now_hour"] == 18
+    msg = captured["user_message"]
+    assert "price_listing" in msg
+    assert "Category: prepared_meal" in msg
+    assert "Region: US-FL-Hillsborough" in msg
+    assert "Units: 10" in msg
+    assert "Retail value: $12.0" in msg
+    assert "Hours until expiry: 4.0" in msg
+    assert "Current hour (24h): 18" in msg
+    assert "Merchant floor pct: 0.1" in msg
 
     assert result["status"] == "ok"
-    assert result["recommendation"]["recommended_price"] == 7.25
+    assert "Priced at $7.25" in result["narration"]
 
 
-async def test_request_anchor_price_surfaces_no_anchor(
+async def test_request_anchor_price_validation_error_before_pricing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Missing retail/expiry must fail fast with validation_error, no A2A call."""
     from agents.listing_intake import tools as intake_tools
 
-    async def fake_call_peer_agent(**_: Any) -> dict[str, Any]:
-        return {"status": "no_anchor",
-                "narration": "No reference price for category=x region=ZZ"}
+    called = False
 
-    monkeypatch.setattr(intake_tools.a2a, "call_peer_agent", fake_call_peer_agent)
+    async def fake_aggregate(**_: Any) -> dict[str, Any]:
+        nonlocal called
+        called = True
+        return {"narration": "", "tool_calls": [], "event_count": 0}
+
+    monkeypatch.setattr(intake_tools.a2a, "aggregate_peer_stream", fake_aggregate)
 
     result = await intake_tools.request_anchor_price(
-        draft={"title": "x", "category": "prepared_meal", "units": 1,
-               "retail_value": "10", "hours_until_expiry": "4"},
+        draft={"title": "x", "category": "prepared_meal", "units": 1},
         partner_id="sk_demo",
-        region="ZZ",
+        region="US-FL",
         merchant_floor_pct=0.10,
         now_hour=12,
     )
-    assert result["status"] == "no_anchor"
-    assert "No reference price" in result["narration"]
+    assert result["status"] == "validation_error"
+    assert called is False
 
 
 async def test_persist_listing_inserts_with_recommendation_binding(

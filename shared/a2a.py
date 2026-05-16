@@ -141,41 +141,41 @@ async def call_peer_agent(
     return final_event
 
 
-async def call_concierge(
+async def aggregate_peer_stream(
+    peer: Peer,
     user_message: str,
     partner_id: str,
     *,
     session_id: str | None = None,
 ) -> dict[str, Any]:
-    """Send a merchant message to Concierge and aggregate the streamed response.
+    """Send a plain-string message to a peer and aggregate its streamed events.
 
-    Concierge is the only externally-addressable agent. Unlike `call_peer_agent`
-    (which packs an internal `{mode, input}` envelope for inter-agent dispatch),
-    this helper sends the user's raw text the way ADK's Runner expects, then
-    walks the entire stream to reconstruct the gateway's `ConciergeResponse`
-    contract:
+    Unlike `call_peer_agent` (which packs an `{mode, input}` envelope and
+    returns only the FINAL event verbatim), this helper:
+      - sends the user's raw text the way ADK's Runner expects;
+      - walks the full stream;
+      - returns `{narration, tool_calls, event_count}` where `tool_calls` is
+        the list of `function_call` parts each paired with their matching
+        `function_response.response` (None if the engine didn't emit one).
 
-      - `narration`         — the model's final text reply.
-      - `specialist_called` — the peer whose `route_to_*` tool was invoked
-                              (None when the model returned the out-of-scope
-                              redirect without calling a tool).
-      - `specialist_payload`— the raw response from that routing tool, which
-                              for now is whatever the specialist's stream
-                              produced. Empty `{}` when no specialist was called.
+    Used by:
+      - `call_concierge` (gateway façade, derives `specialist_called`)
+      - routing tools in `agents/concierge/tools.py` (relay the specialist's
+        narration up to the Concierge model)
+      - `agents/listing_intake/tools.py:request_anchor_price` (relay Pricing's
+        recommendation up to the Listing Intake model)
 
-    The aggregation has to live client-side because ADK doesn't publish
-    `specialist_called` as a first-class top-level field — tool calls are
-    scattered across `function_call` / `function_response` parts in the
-    earlier events of the stream.
+    Aggregation has to live client-side because ADK doesn't surface a
+    top-level structured envelope — tool calls and the model's final
+    speech are split across separate parts in separate stream events.
     """
-    handle = await _get_handle("concierge")
-
+    handle = await _get_handle(peer)
     last_text = ""
     tool_calls: list[dict[str, Any]] = []
     event_count = 0
 
     headers: dict[str, str] = {}
-    with a2a_client_span("concierge", headers) as span:
+    with a2a_client_span(peer, headers) as span:
         set_attrs(span, **{"a2a.mode": "user_message",
                            "a2a.partner_id": partner_id})
 
@@ -205,9 +205,34 @@ async def call_concierge(
         set_attrs(span, **{"a2a.event_count": event_count,
                            "a2a.tool_call_count": len(tool_calls)})
 
+    return {
+        "narration": last_text,
+        "tool_calls": tool_calls,
+        "event_count": event_count,
+    }
+
+
+async def call_concierge(
+    user_message: str,
+    partner_id: str,
+    *,
+    session_id: str | None = None,
+) -> dict[str, Any]:
+    """Gateway façade: send a merchant message and derive ConciergeResponse fields.
+
+    Returns `{narration, specialist_called, specialist_payload, event_count}`.
+    `specialist_called` is the suffix of any `route_to_*` tool the Concierge
+    model invoked; `specialist_payload` is that tool's `function_response`
+    (which, after the routing tools are themselves aggregated, is a
+    `{narration, status, ...}` dict the model relayed verbatim).
+    """
+    agg = await aggregate_peer_stream(
+        "concierge", user_message, partner_id, session_id=session_id,
+    )
+
     specialist_called: str | None = None
     specialist_payload: dict[str, Any] = {}
-    for tc in tool_calls:
+    for tc in agg["tool_calls"]:
         name = tc.get("name") or ""
         if name.startswith("route_to_"):
             specialist_called = name[len("route_to_"):]
@@ -217,8 +242,8 @@ async def call_concierge(
             break
 
     return {
-        "narration": last_text,
+        "narration": agg["narration"],
         "specialist_called": specialist_called,
         "specialist_payload": specialist_payload,
-        "event_count": event_count,
+        "event_count": agg["event_count"],
     }

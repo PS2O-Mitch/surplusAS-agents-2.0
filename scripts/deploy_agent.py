@@ -41,6 +41,23 @@ SECRET_ID_MAP = {
     "WEBHOOK_SIGNING_KEY": "webhook-signing-key",
 }
 
+# Which peer resource env vars each agent needs visible at runtime so its
+# A2A routing tools can resolve handles. Concierge talks to all four
+# specialists; Listing Intake calls Pricing for live anchors; Dispute Triage
+# (Phase 4) replays through Pricing. Pulled from `shared.config.get_settings()`
+# at deploy time so the values match the local `.env` we maintain alongside
+# this script.
+_PEER_RESOURCE_FORWARDS: dict[str, tuple[str, ...]] = {
+    "concierge": (
+        "PRICING_AGENT_RESOURCE",
+        "ONBOARDING_AGENT_RESOURCE",
+        "LISTING_INTAKE_AGENT_RESOURCE",
+        "DISPUTE_TRIAGE_AGENT_RESOURCE",
+    ),
+    "listing_intake": ("PRICING_AGENT_RESOURCE",),
+    "dispute_triage": ("PRICING_AGENT_RESOURCE",),
+}
+
 # Vertex Agent Engine rejects these env names (it auto-injects them into the
 # deployed container). Including them in `env_vars` triggers:
 #   400 Environment variable name '<NAME>' is reserved.
@@ -196,6 +213,30 @@ def deploy(name: str) -> str:
         }
     if skipped_reserved:
         print(f"skipped reserved env keys (auto-injected by Vertex): {sorted(skipped_reserved)}")
+
+    # Forward peer Agent Engine resource names so this agent's A2A tools can
+    # resolve handles at runtime. Values come from `shared.config.get_settings()`,
+    # which itself reads from .env or the process environment. Empty values
+    # (e.g. DISPUTE_TRIAGE_AGENT_RESOURCE in Phase 3) are skipped — those
+    # routing tools will raise at call time, which is the desired behaviour.
+    forwarded: list[str] = []
+    if name in _PEER_RESOURCE_FORWARDS:
+        from shared.config import get_settings  # late import; needs .env loaded
+        settings = get_settings()
+        setting_map = {
+            "PRICING_AGENT_RESOURCE": settings.pricing_agent_resource,
+            "ONBOARDING_AGENT_RESOURCE": settings.onboarding_agent_resource,
+            "LISTING_INTAKE_AGENT_RESOURCE": settings.listing_intake_agent_resource,
+            "DISPUTE_TRIAGE_AGENT_RESOURCE": settings.dispute_triage_agent_resource,
+            "CONCIERGE_AGENT_RESOURCE": settings.concierge_agent_resource,
+        }
+        for env_key in _PEER_RESOURCE_FORWARDS[name]:
+            value = setting_map.get(env_key, "")
+            if value:
+                env_vars[env_key] = value
+                forwarded.append(env_key)
+    if forwarded:
+        print(f"forwarded peer resources: {sorted(forwarded)}")
 
     print(
         f"Deploying agent={name} display_name={display_name} "
