@@ -112,6 +112,13 @@ class ListingDraft(BaseModel):
     image_uri: str | None = None
 
 
+# ---------------------------------------------------------------------------
+# ValidationResult — wire format for listing-validation responses.
+# Emitted by the gateway (`service/routes_rest.py`, Phase 3 Track C) and
+# mirrored in tool returns from `validate_listing`. Pydantic models live here
+# so the route can declare them as response_model without re-deriving the
+# shape at the boundary.
+# ---------------------------------------------------------------------------
 class ValidationError(BaseModel):
     field: str
     error: str

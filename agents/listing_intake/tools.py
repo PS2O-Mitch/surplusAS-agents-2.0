@@ -93,12 +93,15 @@ async def validate_listing(*, draft: dict[str, Any]) -> dict[str, Any]:
         })
 
     units = draft.get("units")
-    try:
-        units_int = int(units) if units is not None else 0
-    except (TypeError, ValueError):
-        units_int = 0
-    if units_int < 1:
-        errors.append({"field": "units", "error": "units must be >= 1"})
+    if units is None:
+        errors.append({"field": "units", "error": "units is required"})
+    else:
+        try:
+            units_int = int(units)
+        except (TypeError, ValueError):
+            units_int = 0
+        if units_int < 1:
+            errors.append({"field": "units", "error": "units must be >= 1"})
 
     retail = _decimal_or_none(draft.get("retail_value"))
     if retail is None or retail <= 0:

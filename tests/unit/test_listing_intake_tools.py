@@ -86,4 +86,19 @@ async def test_validate_listing_rejects_zero_units() -> None:
     }
     result = await validate_listing(draft=draft)
     assert result["status"] == "validation_error"
-    assert any(e["field"] == "units" for e in result["errors"])
+    units_errors = [e for e in result["errors"] if e["field"] == "units"]
+    assert len(units_errors) == 1
+    assert units_errors[0]["error"] == "units must be >= 1"
+
+
+async def test_validate_listing_rejects_missing_units() -> None:
+    draft = {
+        "title": "x", "category": "prepared_meal",
+        "retail_value": "10", "hours_until_expiry": "4",
+        # units absent on purpose
+    }
+    result = await validate_listing(draft=draft)
+    assert result["status"] == "validation_error"
+    units_errors = [e for e in result["errors"] if e["field"] == "units"]
+    assert len(units_errors) == 1
+    assert units_errors[0]["error"] == "units is required"
