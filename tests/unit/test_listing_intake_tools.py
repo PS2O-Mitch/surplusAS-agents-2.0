@@ -35,3 +35,20 @@ async def test_parse_draft_returns_validation_error_on_empty_text() -> None:
     result = await parse_draft(text="")
     assert result["status"] == "validation_error"
     assert result["field"] == "text"
+
+
+async def test_parse_draft_with_only_text_returns_all_none_fields() -> None:
+    """When the model passes raw text without extracting fields, the tool echoes
+    None for every optional field so validate_listing can distinguish 'absent'
+    from 'present-but-empty'."""
+    result = await parse_draft(text="10 turkey sandwiches expire in 4h")
+    assert result["status"] == "ok"
+    draft = result["draft"]
+    assert draft["title"] is None
+    assert draft["category"] is None
+    assert draft["units"] is None
+    assert draft["retail_value"] is None
+    assert draft["hours_until_expiry"] is None
+    assert draft["description"] is None
+    assert draft["image_uri"] is None
+    assert result["had_image"] is False

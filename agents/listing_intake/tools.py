@@ -49,18 +49,18 @@ async def parse_draft(
     if not text or not text.strip():
         return {
             "status": "validation_error",
-            "field": "text",
             "error": "text must be a non-empty string",
+            "field": "text",
         }
 
     retail = _decimal_or_none(retail_value)
     expiry = _decimal_or_none(hours_until_expiry)
 
     draft = {
-        "title": title or "",
+        "title": title,
         "description": description,
-        "category": category or "",
-        "units": int(units) if units is not None else 0,
+        "category": category,
+        "units": int(units) if units is not None else None,
         "retail_value": str(retail) if retail is not None else None,
         "hours_until_expiry": str(expiry) if expiry is not None else None,
         "image_uri": image_uri,
