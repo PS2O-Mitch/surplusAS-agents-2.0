@@ -55,7 +55,10 @@ async def require_partner(
     """FastAPI dependency: extract bearer token and resolve to a `PartnerContext`."""
     if not authorization.lower().startswith("bearer "):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
-    api_key = authorization.split(None, 1)[1].strip()
+    # `authorization[len("Bearer "):]` handles the all-whitespace tail cleanly;
+    # `.split(None, 1)[1]` would IndexError on "Bearer " because there's no
+    # second token to split into.
+    api_key = authorization[len("Bearer "):].strip()
     if not api_key:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Empty api_key")
     return await _resolve_api_key(api_key)
