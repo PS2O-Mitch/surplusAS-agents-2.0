@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
+from unittest.mock import AsyncMock
 
 if TYPE_CHECKING:
     import pytest
@@ -180,3 +181,65 @@ async def test_request_anchor_price_surfaces_no_anchor(
     )
     assert result["status"] == "no_anchor"
     assert "No reference price" in result["narration"]
+
+
+async def test_persist_listing_inserts_with_recommendation_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agents.listing_intake import tools as intake_tools
+
+    captured_sql: list[tuple[str, tuple[Any, ...]]] = []
+
+    async def fake_fetch_one(sql: str, *args: Any) -> dict[str, Any]:
+        captured_sql.append((sql, args))
+        return {"listing_id": "22222222-2222-2222-2222-222222222222"}
+
+    class _FakePool:
+        def acquire(self) -> Any:
+            class _Ctx:
+                async def __aenter__(self_inner) -> Any:
+                    return None
+                async def __aexit__(self_inner, *_: Any) -> None: ...
+            return _Ctx()
+
+    monkeypatch.setattr(intake_tools, "fetch_one", fake_fetch_one)
+    monkeypatch.setattr(intake_tools, "init_pool",
+                        AsyncMock(return_value=_FakePool()))
+
+    result = await intake_tools.persist_listing(
+        draft={
+            "title": "Day-old sandwiches",
+            "description": "deli-made",
+            "category": "prepared_meal",
+            "units": 10,
+            "retail_value": "12.00",
+            "hours_until_expiry": "4",
+            "image_uri": None,
+        },
+        recommendation_id="11111111-1111-1111-1111-111111111111",
+        merchant_id="33333333-3333-3333-3333-333333333333",
+        partner_id="sk_demo",
+        status="draft",
+    )
+    assert result["status"] == "ok"
+    assert result["listing_id"] == "22222222-2222-2222-2222-222222222222"
+
+    sql, _args = captured_sql[0]
+    assert "INSERT INTO agents.listings" in sql
+    assert "initial_recommendation_id" in sql
+    assert "current_recommendation_id" in sql
+
+
+async def test_persist_listing_rejects_invalid_status() -> None:
+    from agents.listing_intake.tools import persist_listing
+
+    result = await persist_listing(
+        draft={"title": "x", "category": "prepared_meal", "units": 1,
+               "retail_value": "10", "hours_until_expiry": "4"},
+        recommendation_id="11111111-1111-1111-1111-111111111111",
+        merchant_id="33333333-3333-3333-3333-333333333333",
+        partner_id="sk_demo",
+        status="bogus",
+    )
+    assert result["status"] == "validation_error"
+    assert result["field"] == "status"

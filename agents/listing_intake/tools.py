@@ -15,8 +15,10 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from uuid import UUID
 
 from shared import a2a
+from shared.db import fetch_one, init_pool
 from shared.pricing_intel import VALID_CATEGORIES
 
 
@@ -159,3 +161,87 @@ async def request_anchor_price(
         input=pricing_input,
         partner_id=partner_id,
     )
+
+
+_VALID_STATUSES = {"draft", "draft_no_price", "published"}
+
+
+async def persist_listing(
+    *,
+    draft: dict[str, Any],
+    recommendation_id: str,
+    merchant_id: str,
+    partner_id: str,
+    status: str = "draft",
+) -> dict[str, Any]:
+    """Insert a row into `agents.listings`, binding to the recommendation.
+
+    Caller must have run `validate_listing` first — this tool does not
+    re-validate the draft fields, only the status + UUIDs + presence of
+    numeric retail_value / hours_until_expiry.
+
+    Status semantics:
+      - 'draft'           -> had a live anchor; ready to publish.
+      - 'draft_no_price'  -> Pricing returned no_anchor; surfaced to Concierge.
+      - 'published'       -> Listing Intake's publish helper (called by demo shim).
+
+    Both `initial_recommendation_id` and `current_recommendation_id` are set
+    to the same value at insert time. Dispute Triage will UPDATE
+    `current_recommendation_id` to a replay row but never touches the
+    `initial_*` column — that's the audit anchor.
+    """
+    if status not in _VALID_STATUSES:
+        return {
+            "status": "validation_error",
+            "error": f"status must be one of {sorted(_VALID_STATUSES)}",
+            "field": "status",
+        }
+
+    try:
+        rec_uuid = UUID(recommendation_id)
+        merch_uuid = UUID(merchant_id)
+    except ValueError as exc:
+        return {
+            "status": "validation_error",
+            "error": f"invalid UUID: {exc}",
+            "field": "uuid",
+        }
+
+    retail = _decimal_or_none(draft.get("retail_value"))
+    expiry = _decimal_or_none(draft.get("hours_until_expiry"))
+    if retail is None or expiry is None:
+        return {
+            "status": "validation_error",
+            "error": "draft is missing retail_value or hours_until_expiry",
+            "field": "draft",
+        }
+
+    pool = await init_pool()
+    async with pool.acquire():
+        row = await fetch_one(
+            "INSERT INTO agents.listings "
+            "  (merchant_id, partner_id, title, description, category, units, "
+            "   retail_value, hours_until_expiry, image_uri, status, "
+            "   initial_recommendation_id, current_recommendation_id) "
+            "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11) "
+            "RETURNING listing_id",
+            merch_uuid,
+            partner_id,
+            draft["title"],
+            draft.get("description"),
+            draft["category"],
+            int(draft["units"]),
+            retail,
+            expiry,
+            draft.get("image_uri"),
+            status,
+            rec_uuid,
+        )
+    assert row is not None
+    return {
+        "status": "ok",
+        "listing_id": str(row["listing_id"]),
+        "recommendation_id": recommendation_id,
+        "merchant_id": merchant_id,
+        "listing_status": status,
+    }
