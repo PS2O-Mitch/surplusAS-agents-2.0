@@ -1,0 +1,25 @@
+# Concierge routing golden cases. Local mode is a structural pass — verifies
+# each case names a valid `expected_specialist`. Real `route_correctness`
+# measurement against the live model runs in remote mode (evals/runner.py:177).
+# Adversarial / out-of-scope cases are deferred to a follow-up since the
+# local runner requires expected_specialist to be one of the four valid peers.
+{"case_id": "onboard_tampa_deli", "input": {"message": "Hi, I run a deli in Tampa, FL. We do sandwiches and salads."}, "expected_specialist": "onboarding"}
+{"case_id": "onboard_change_floor", "input": {"message": "Can you bump my floor from 10% to 15%?"}, "expected_specialist": "onboarding"}
+{"case_id": "onboard_add_category", "input": {"message": "Add bakery to my allowed categories."}, "expected_specialist": "onboarding"}
+{"case_id": "onboard_change_region", "input": {"message": "We moved to Brooklyn NY, please update."}, "expected_specialist": "onboarding"}
+{"case_id": "onboard_new_merchant_short", "input": {"message": "I'm Pat at Sunset Bakery."}, "expected_specialist": "onboarding"}
+{"case_id": "intake_sandwich_draft", "input": {"message": "Save these 10 turkey sandwiches, expire in 4 hours, retail $12 each."}, "expected_specialist": "listing_intake"}
+{"case_id": "intake_bagel_clearance", "input": {"message": "Got 24 plain bagels left, last call. $1.75 retail."}, "expected_specialist": "listing_intake"}
+{"case_id": "intake_with_image", "input": {"message": "Here's a photo of what's left. 8 boxes of pastries.", "image_b64": "iVBORw0KGgo="}, "expected_specialist": "listing_intake"}
+{"case_id": "intake_produce_listing", "input": {"message": "List 6 quarts strawberries, going soft tomorrow, $5.99/quart"}, "expected_specialist": "listing_intake"}
+{"case_id": "intake_publish_now", "input": {"message": "Publish these 12 caesar salad bowls, $14 each, close at 8."}, "expected_specialist": "listing_intake"}
+{"case_id": "pricing_what_would_this_cost", "input": {"message": "What would 10 sandwiches at $12 each price at if they expire in 4 hours?"}, "expected_specialist": "pricing"}
+{"case_id": "pricing_quote_only", "input": {"message": "Just a quote, don't save yet — 6 pastries, $4 each, 3 hours left."}, "expected_specialist": "pricing"}
+{"case_id": "pricing_explore_anchor", "input": {"message": "What's the going rate for prepared meals in Hillsborough right now?"}, "expected_specialist": "pricing"}
+{"case_id": "pricing_dry_run", "input": {"message": "Dry run a price for 20 yogurts at $2.25 retail, expires in 36 hours."}, "expected_specialist": "pricing"}
+{"case_id": "pricing_floor_explore", "input": {"message": "What price would I get if I lowered my floor to 5%?"}, "expected_specialist": "pricing"}
+{"case_id": "dispute_price_too_low", "input": {"message": "Listing abc-123 dropped to $4 — that seems wrong. Can you check?"}, "expected_specialist": "dispute_triage"}
+{"case_id": "dispute_pressure_question", "input": {"message": "On listing 22222222-2222-2222-2222-222222222222 why is expiry pressure so high?"}, "expected_specialist": "dispute_triage"}
+{"case_id": "dispute_recompute", "input": {"message": "Re-price listing xyz-456 — the original expiry was wrong."}, "expected_specialist": "dispute_triage"}
+{"case_id": "dispute_audit_request", "input": {"message": "Show me why listing abc was priced at $6.50."}, "expected_specialist": "dispute_triage"}
+{"case_id": "dispute_objection", "input": {"message": "I'm objecting to the current price on listing 33333333-3333-3333-3333-333333333333."}, "expected_specialist": "dispute_triage"}
