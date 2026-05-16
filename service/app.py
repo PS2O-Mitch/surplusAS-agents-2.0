@@ -45,10 +45,12 @@ def create_app() -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    from .routes_rest import router as rest_router
+    app.include_router(rest_router)
+
     if STATIC_DIR.is_dir():
         app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-    # TODO Week 1+: mount routes_rest, routes_demo, routes_a2a as they land.
     return app
 
 
