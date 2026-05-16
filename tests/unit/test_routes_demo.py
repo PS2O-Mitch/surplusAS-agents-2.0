@@ -24,20 +24,47 @@ def test_demo_agent_uses_demo_partner_id(
 ) -> None:
     captured: dict[str, Any] = {}
 
-    async def fake_call(**kwargs: Any) -> dict[str, Any]:
+    async def fake_call_concierge(**kwargs: Any) -> dict[str, Any]:
         captured.update(kwargs)
         return {"narration": "demo ok", "specialist_called": "onboarding",
-                "specialist_payload": {}}
+                "specialist_payload": {"merchant_id": "abc"},
+                "event_count": 3}
 
-    monkeypatch.setattr("service.routes_demo.a2a.call_peer_agent", fake_call)
+    monkeypatch.setattr("service.routes_demo.a2a.call_concierge",
+                        fake_call_concierge)
 
     resp = client.post("/demo/v1/agent", json={"message": "I run a deli"})
     assert resp.status_code == 200
-    assert resp.json()["narration"] == "demo ok"
-    assert captured["peer"] == "concierge"
+    body = resp.json()
+    assert body["narration"] == "demo ok"
+    assert body["specialist_called"] == "onboarding"
+    assert body["specialist_payload"] == {"merchant_id": "abc"}
     assert captured["partner_id"] == "sk_demo_surplus_2026"
-    assert captured["mode"] == "process"
-    assert captured["input"]["message"] == "I run a deli"
+    assert captured["user_message"] == "I run a deli"
+
+
+def test_demo_agent_prepends_context_to_message(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_call_concierge(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"narration": "ok", "specialist_called": None,
+                "specialist_payload": {}, "event_count": 1}
+
+    monkeypatch.setattr("service.routes_demo.a2a.call_concierge",
+                        fake_call_concierge)
+
+    resp = client.post(
+        "/demo/v1/agent",
+        json={"message": "why is the price low?",
+              "listing_id": "abc-123", "merchant_id": "m-1"},
+    )
+    assert resp.status_code == 200
+    assert captured["user_message"] == (
+        "[merchant_id=m-1, listing_id=abc-123] why is the price low?"
+    )
 
 
 def test_demo_publish_listing_routes_to_intake(
@@ -67,8 +94,8 @@ def test_demo_agent_requires_no_auth(client: TestClient,
     """Same-origin shim is intentionally unauthenticated (Cloud Run IAP gates static)."""
     async def fake_call(**_: Any) -> dict[str, Any]:
         return {"narration": "ok", "specialist_called": None,
-                "specialist_payload": {}}
+                "specialist_payload": {}, "event_count": 1}
 
-    monkeypatch.setattr("service.routes_demo.a2a.call_peer_agent", fake_call)
+    monkeypatch.setattr("service.routes_demo.a2a.call_concierge", fake_call)
     resp = client.post("/demo/v1/agent", json={"message": "hi"})
     assert resp.status_code == 200

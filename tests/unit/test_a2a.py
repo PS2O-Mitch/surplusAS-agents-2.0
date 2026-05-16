@@ -153,3 +153,81 @@ async def test_handle_is_cached_per_resource(monkeypatch):
     await a2a.call_peer_agent("pricing", "price_listing", {}, "sk_demo")
 
     assert call_count == 1, "handle should be resolved once per resource and cached"
+
+
+# ---------------------------------------------------------------------------
+# call_concierge — stream aggregator
+# ---------------------------------------------------------------------------
+
+
+async def test_call_concierge_extracts_narration_from_final_text(monkeypatch):
+    """When Concierge replies with prose (no tool), the final part.text becomes narration."""
+    handle = MagicMock()
+    handle.async_stream_query = lambda **_: _make_async_iter([
+        {"content": {"parts": [{"text": "I can help you onboard, list, price, or resolve a dispute."}],
+                     "role": "model"},
+         "author": "concierge"},
+    ])
+    monkeypatch.setattr(a2a.agent_engines, "get", lambda _r: handle)
+
+    result = await a2a.call_concierge(
+        user_message="What do you do?",
+        partner_id="sk_demo",
+    )
+    assert result["narration"].startswith("I can help you onboard")
+    assert result["specialist_called"] is None
+    assert result["specialist_payload"] == {}
+    assert result["event_count"] == 1
+
+
+async def test_call_concierge_captures_specialist_from_tool_call(monkeypatch):
+    """When the model invokes route_to_*, the suffix becomes specialist_called."""
+    handle = MagicMock()
+    handle.async_stream_query = lambda **_: _make_async_iter([
+        # event 1: model decides to call route_to_listing_intake
+        {"content": {"parts": [{"function_call": {
+            "name": "route_to_listing_intake",
+            "args": {"message": "10 sandwiches", "partner_id": "sk_demo"},
+        }}], "role": "model"}, "author": "concierge"},
+        # event 2: tool response comes back
+        {"content": {"parts": [{"function_response": {
+            "name": "route_to_listing_intake",
+            "response": {"status": "ok", "listing_id": "abc-123"},
+        }}], "role": "user"}, "author": "concierge"},
+        # event 3: model narrates
+        {"content": {"parts": [{"text": "Saved 10 sandwiches at $7.25."}],
+                     "role": "model"}, "author": "concierge"},
+    ])
+    monkeypatch.setattr(a2a.agent_engines, "get", lambda _r: handle)
+
+    result = await a2a.call_concierge(
+        user_message="Save these 10 turkey sandwiches",
+        partner_id="sk_demo",
+    )
+    assert result["specialist_called"] == "listing_intake"
+    assert result["specialist_payload"] == {"status": "ok", "listing_id": "abc-123"}
+    assert result["narration"] == "Saved 10 sandwiches at $7.25."
+    assert result["event_count"] == 3
+
+
+async def test_call_concierge_ignores_non_routing_tool_calls(monkeypatch):
+    """A tool call that isn't `route_to_*` shouldn't populate specialist_called."""
+    handle = MagicMock()
+    handle.async_stream_query = lambda **_: _make_async_iter([
+        {"content": {"parts": [{"function_call": {
+            "name": "some_other_tool", "args": {},
+        }}], "role": "model"}, "author": "concierge"},
+        {"content": {"parts": [{"function_response": {
+            "name": "some_other_tool", "response": {"x": 1},
+        }}], "role": "user"}, "author": "concierge"},
+        {"content": {"parts": [{"text": "Done."}], "role": "model"},
+         "author": "concierge"},
+    ])
+    monkeypatch.setattr(a2a.agent_engines, "get", lambda _r: handle)
+
+    result = await a2a.call_concierge(
+        user_message="x", partner_id="sk_demo",
+    )
+    assert result["specialist_called"] is None
+    assert result["specialist_payload"] == {}
+    assert result["narration"] == "Done."

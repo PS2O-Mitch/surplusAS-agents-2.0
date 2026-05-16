@@ -139,3 +139,86 @@ async def call_peer_agent(
             f"A2A call to {peer!r} (mode={mode!r}) yielded zero events."
         )
     return final_event
+
+
+async def call_concierge(
+    user_message: str,
+    partner_id: str,
+    *,
+    session_id: str | None = None,
+) -> dict[str, Any]:
+    """Send a merchant message to Concierge and aggregate the streamed response.
+
+    Concierge is the only externally-addressable agent. Unlike `call_peer_agent`
+    (which packs an internal `{mode, input}` envelope for inter-agent dispatch),
+    this helper sends the user's raw text the way ADK's Runner expects, then
+    walks the entire stream to reconstruct the gateway's `ConciergeResponse`
+    contract:
+
+      - `narration`         — the model's final text reply.
+      - `specialist_called` — the peer whose `route_to_*` tool was invoked
+                              (None when the model returned the out-of-scope
+                              redirect without calling a tool).
+      - `specialist_payload`— the raw response from that routing tool, which
+                              for now is whatever the specialist's stream
+                              produced. Empty `{}` when no specialist was called.
+
+    The aggregation has to live client-side because ADK doesn't publish
+    `specialist_called` as a first-class top-level field — tool calls are
+    scattered across `function_call` / `function_response` parts in the
+    earlier events of the stream.
+    """
+    handle = await _get_handle("concierge")
+
+    last_text = ""
+    tool_calls: list[dict[str, Any]] = []
+    event_count = 0
+
+    headers: dict[str, str] = {}
+    with a2a_client_span("concierge", headers) as span:
+        set_attrs(span, **{"a2a.mode": "user_message",
+                           "a2a.partner_id": partner_id})
+
+        async for event in handle.async_stream_query(  # type: ignore[attr-defined]
+            message=user_message,
+            user_id=partner_id,
+            session_id=session_id,
+        ):
+            event_count += 1
+            for part in (event.get("content", {}).get("parts") or []):
+                if part.get("text"):
+                    last_text = part["text"]
+                if "function_call" in part:
+                    fc = part.get("function_call") or {}
+                    tool_calls.append({
+                        "name": fc.get("name"),
+                        "args": fc.get("args", {}),
+                        "response": None,
+                    })
+                if "function_response" in part:
+                    fr = part.get("function_response") or {}
+                    for tc in reversed(tool_calls):
+                        if tc["name"] == fr.get("name") and tc["response"] is None:
+                            tc["response"] = fr.get("response")
+                            break
+
+        set_attrs(span, **{"a2a.event_count": event_count,
+                           "a2a.tool_call_count": len(tool_calls)})
+
+    specialist_called: str | None = None
+    specialist_payload: dict[str, Any] = {}
+    for tc in tool_calls:
+        name = tc.get("name") or ""
+        if name.startswith("route_to_"):
+            specialist_called = name[len("route_to_"):]
+            resp = tc.get("response")
+            if isinstance(resp, dict):
+                specialist_payload = resp
+            break
+
+    return {
+        "narration": last_text,
+        "specialist_called": specialist_called,
+        "specialist_payload": specialist_payload,
+        "event_count": event_count,
+    }

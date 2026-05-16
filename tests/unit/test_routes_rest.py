@@ -36,16 +36,17 @@ def test_post_concierge_invokes_concierge_handle(
 ) -> None:
     captured: dict[str, Any] = {}
 
-    async def fake_call_peer_agent(**kwargs: Any) -> dict[str, Any]:
+    async def fake_call_concierge(**kwargs: Any) -> dict[str, Any]:
         captured.update(kwargs)
         return {
             "narration": "Routed to Listing Intake; saved 10 sandwiches at $7.25.",
             "specialist_called": "listing_intake",
             "specialist_payload": {"listing_id": "abc"},
+            "event_count": 4,
         }
 
-    monkeypatch.setattr("service.routes_rest.a2a.call_peer_agent",
-                        fake_call_peer_agent)
+    monkeypatch.setattr("service.routes_rest.a2a.call_concierge",
+                        fake_call_concierge)
 
     resp = client.post(
         "/v1/concierge",
@@ -57,19 +58,21 @@ def test_post_concierge_invokes_concierge_handle(
     body = resp.json()
     assert body["narration"].startswith("Routed to Listing Intake")
     assert body["specialist_called"] == "listing_intake"
-    assert captured["peer"] == "concierge"
+    assert body["specialist_payload"] == {"listing_id": "abc"}
     assert captured["partner_id"] == "sk_demo"
+    assert captured["user_message"] == "10 sandwiches expire in 4h"
 
 
 def test_post_concierge_rejects_partner_id_mismatch(
     monkeypatch: pytest.MonkeyPatch, client: TestClient,
 ) -> None:
-    async def fake_call_peer_agent(**_: Any) -> dict[str, Any]:
+    async def fake_call_concierge(**_: Any) -> dict[str, Any]:
         # Should never reach here — body partner_id != authenticated partner_id.
-        return {"narration": "should not be called"}
+        return {"narration": "should not be called", "specialist_called": None,
+                "specialist_payload": {}, "event_count": 0}
 
-    monkeypatch.setattr("service.routes_rest.a2a.call_peer_agent",
-                        fake_call_peer_agent)
+    monkeypatch.setattr("service.routes_rest.a2a.call_concierge",
+                        fake_call_concierge)
 
     resp = client.post(
         "/v1/concierge",

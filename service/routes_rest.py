@@ -30,23 +30,33 @@ async def post_concierge(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="body.partner_id does not match authenticated identity",
         )
-    final = await a2a.call_peer_agent(
-        peer="concierge",
-        mode="process",
-        input={
-            "message": body.message,
-            "merchant_id": body.merchant_id,
-            "listing_id": body.listing_id,
-            "image_b64": body.image,
-        },
+    user_message = _compose_concierge_message(body)
+    aggregated = await a2a.call_concierge(
+        user_message=user_message,
         partner_id=partner.partner_id,
     )
     return ConciergeResponse(
-        narration=final.get("narration", ""),
-        specialist_called=final.get("specialist_called"),
-        specialist_payload=final.get("specialist_payload", {}),
-        trace_id=final.get("trace_id"),
+        narration=aggregated["narration"],
+        specialist_called=aggregated["specialist_called"],
+        specialist_payload=aggregated["specialist_payload"],
+        trace_id=None,
     )
+
+
+def _compose_concierge_message(body: ConciergeRequest) -> str:
+    """Pack merchant_id / listing_id context into the user message string.
+
+    Same rationale as `routes_demo._compose_concierge_message`. Image
+    attachments are deferred to Phase 4 (need multimodal Content wrapping).
+    """
+    parts: list[str] = []
+    if body.merchant_id:
+        parts.append(f"merchant_id={body.merchant_id}")
+    if body.listing_id:
+        parts.append(f"listing_id={body.listing_id}")
+    if parts:
+        return f"[{', '.join(parts)}] {body.message}"
+    return body.message
 
 
 @router.get("/listings/{listing_id}")

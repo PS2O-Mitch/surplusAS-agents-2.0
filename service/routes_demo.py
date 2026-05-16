@@ -22,22 +22,36 @@ DEMO_PARTNER_ID = "sk_demo_surplus_2026"
 @router.post("/agent")
 async def demo_agent(body: dict[str, Any]) -> dict[str, Any]:
     """Delegate to /v1/concierge with a fixed demo partner_id."""
-    final = await a2a.call_peer_agent(
-        peer="concierge",
-        mode="process",
-        input={
-            "message": body.get("message", ""),
-            "merchant_id": body.get("merchant_id"),
-            "listing_id": body.get("listing_id"),
-            "image_b64": body.get("image"),
-        },
+    user_message = _compose_concierge_message(body)
+    aggregated = await a2a.call_concierge(
+        user_message=user_message,
         partner_id=DEMO_PARTNER_ID,
     )
     return {
-        "narration": final.get("narration", ""),
-        "specialist_called": final.get("specialist_called"),
-        "specialist_payload": final.get("specialist_payload", {}),
+        "narration": aggregated["narration"],
+        "specialist_called": aggregated["specialist_called"],
+        "specialist_payload": aggregated["specialist_payload"],
     }
+
+
+def _compose_concierge_message(body: dict[str, Any]) -> str:
+    """Pack merchant_id / listing_id context hints into the user message string.
+
+    ADK's Runner accepts a string (auto-wrapped as user content) but not the
+    `{mode, input}` envelope our internal A2A helper uses. We surface the
+    optional context fields as a leading bracketed prefix so the Concierge's
+    prompt can still see them, while keeping the message a plain string.
+    Image attachments are TODO Phase 4 (need multimodal Content wrapping).
+    """
+    message = body.get("message", "")
+    parts: list[str] = []
+    if body.get("merchant_id"):
+        parts.append(f"merchant_id={body['merchant_id']}")
+    if body.get("listing_id"):
+        parts.append(f"listing_id={body['listing_id']}")
+    if parts:
+        return f"[{', '.join(parts)}] {message}"
+    return str(message)
 
 
 @router.post("/listings/publish")

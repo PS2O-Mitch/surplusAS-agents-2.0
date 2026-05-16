@@ -73,16 +73,17 @@ def test_beat_1_full_path(
 
     # Concierge handle returns different `specialist_called` payloads per turn.
     # We dispatch on a simple keyword in the merchant message.
-    async def fake_concierge_call(**kwargs: Any) -> dict[str, Any]:
-        message = kwargs["input"]["message"]
-        if "deli" in message.lower() or "tampa" in message.lower():
+    async def fake_call_concierge(**kwargs: Any) -> dict[str, Any]:
+        message = kwargs["user_message"].lower()
+        if "deli" in message or "tampa" in message:
             return {
                 "narration": "Got it — I've set up your profile for Tampa, FL.",
                 "specialist_called": "onboarding",
                 "specialist_payload": {"merchant_id":
                                        "00000000-0000-0000-0000-000000000001"},
+                "event_count": 3,
             }
-        if "sandwich" in message.lower() or "publish" in message.lower():
+        if "sandwich" in message or "publish" in message:
             return {
                 "narration": "Saved 10 sandwiches at $7.25. "
                              "Expiry pressure dominant at 0.30.",
@@ -91,13 +92,15 @@ def test_beat_1_full_path(
                     "listing_id": new_listing_id,
                     "recommended_price": 7.25,
                 },
+                "event_count": 5,
             }
         return {"narration": "I can help you onboard, list, price, or "
                              "resolve a dispute.",
-                "specialist_called": None, "specialist_payload": {}}
+                "specialist_called": None, "specialist_payload": {},
+                "event_count": 1}
 
-    monkeypatch.setattr("service.routes_demo.a2a.call_peer_agent",
-                        fake_concierge_call)
+    monkeypatch.setattr("service.routes_demo.a2a.call_concierge",
+                        fake_call_concierge)
 
     # Turn 1: onboarding.
     resp = client.post("/demo/v1/agent",
@@ -155,9 +158,10 @@ def test_demo_agent_out_of_scope_redirect(
             "narration": "I can help you onboard, list, price, or resolve a dispute.",
             "specialist_called": None,
             "specialist_payload": {},
+            "event_count": 1,
         }
 
-    monkeypatch.setattr("service.routes_demo.a2a.call_peer_agent", fake_call)
+    monkeypatch.setattr("service.routes_demo.a2a.call_concierge", fake_call)
 
     resp = client.post("/demo/v1/agent", json={"message": "tell me a joke"})
     assert resp.status_code == 200
