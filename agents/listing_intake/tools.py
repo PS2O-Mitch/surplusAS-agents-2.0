@@ -16,6 +16,7 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from shared import a2a
 from shared.pricing_intel import VALID_CATEGORIES
 
 
@@ -117,3 +118,44 @@ async def validate_listing(*, draft: dict[str, Any]) -> dict[str, Any]:
         "status": "ok" if not errors else "validation_error",
         "errors": errors,
     }
+
+
+async def request_anchor_price(
+    *,
+    draft: dict[str, Any],
+    partner_id: str,
+    region: str,
+    merchant_floor_pct: float,
+    now_hour: int,
+) -> dict[str, Any]:
+    """Call Pricing over A2A to anchor this draft to a live recommendation.
+
+    Lateral edge per CLAUDE.md ("Listing Intake -> Pricing"). The draft hasn't
+    been persisted yet — Pricing will write a `recommendation_log` row with
+    `listing_id=NULL`, and `persist_listing` will then row-bind it.
+    """
+    retail = _decimal_or_none(draft.get("retail_value"))
+    expiry = _decimal_or_none(draft.get("hours_until_expiry"))
+    if retail is None or expiry is None:
+        return {
+            "status": "validation_error",
+            "error": "draft must have numeric retail_value and hours_until_expiry "
+                     "before pricing",
+        }
+
+    pricing_input = {
+        "category": draft["category"],
+        "region": region,
+        "units": int(draft["units"]),
+        "retail_value": float(retail),
+        "hours_until_expiry": float(expiry),
+        "now_hour": int(now_hour),
+        "merchant_floor_pct": float(merchant_floor_pct),
+    }
+
+    return await a2a.call_peer_agent(
+        peer="pricing",
+        mode="price_listing",
+        input=pricing_input,
+        partner_id=partner_id,
+    )

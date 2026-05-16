@@ -9,6 +9,10 @@ the validation guard on empty text.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pytest
 
 from agents.listing_intake.tools import parse_draft, validate_listing
 
@@ -102,3 +106,77 @@ async def test_validate_listing_rejects_missing_units() -> None:
     units_errors = [e for e in result["errors"] if e["field"] == "units"]
     assert len(units_errors) == 1
     assert units_errors[0]["error"] == "units is required"
+
+
+async def test_request_anchor_price_calls_pricing_with_intake_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_call_peer_agent(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {
+            "status": "ok",
+            "recommendation": {
+                "recommendation_id": "11111111-1111-1111-1111-111111111111",
+                "recommended_price": 7.25,
+                "applied_pressures": {"base": 0.10, "clamped_to_floor": False},
+                "formula_version": "v1",
+            },
+        }
+
+    from agents.listing_intake import tools as intake_tools
+    monkeypatch.setattr(intake_tools.a2a, "call_peer_agent", fake_call_peer_agent)
+
+    draft = {
+        "title": "Day-old sandwiches",
+        "category": "prepared_meal",
+        "units": 10,
+        "retail_value": "12.00",
+        "hours_until_expiry": "4",
+    }
+    result = await intake_tools.request_anchor_price(
+        draft=draft,
+        partner_id="sk_demo",
+        region="US-FL-Hillsborough",
+        merchant_floor_pct=0.10,
+        now_hour=18,
+    )
+
+    assert captured["peer"] == "pricing"
+    assert captured["mode"] == "price_listing"
+    assert captured["partner_id"] == "sk_demo"
+    pricing_input = captured["input"]
+    assert pricing_input["category"] == "prepared_meal"
+    assert pricing_input["region"] == "US-FL-Hillsborough"
+    assert pricing_input["units"] == 10
+    assert float(pricing_input["retail_value"]) == 12.00
+    assert float(pricing_input["hours_until_expiry"]) == 4.0
+    assert pricing_input["merchant_floor_pct"] == 0.10
+    assert pricing_input["now_hour"] == 18
+
+    assert result["status"] == "ok"
+    assert result["recommendation"]["recommended_price"] == 7.25
+
+
+async def test_request_anchor_price_surfaces_no_anchor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agents.listing_intake import tools as intake_tools
+
+    async def fake_call_peer_agent(**_: Any) -> dict[str, Any]:
+        return {"status": "no_anchor",
+                "narration": "No reference price for category=x region=ZZ"}
+
+    monkeypatch.setattr(intake_tools.a2a, "call_peer_agent", fake_call_peer_agent)
+
+    result = await intake_tools.request_anchor_price(
+        draft={"title": "x", "category": "prepared_meal", "units": 1,
+               "retail_value": "10", "hours_until_expiry": "4"},
+        partner_id="sk_demo",
+        region="ZZ",
+        merchant_floor_pct=0.10,
+        now_hour=12,
+    )
+    assert result["status"] == "no_anchor"
+    assert "No reference price" in result["narration"]
