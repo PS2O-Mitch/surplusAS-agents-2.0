@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 
-from agents.dispute_triage.tools import diff_pressures, fetch_recommendation_log
+from agents.dispute_triage.tools import diff_pressures, fetch_recommendation_log, request_reprice
 
 
 async def test_fetch_recommendation_log_returns_latest_row(
@@ -95,3 +96,87 @@ async def test_diff_pressures_treats_missing_keys_as_zero() -> None:
     diff = await diff_pressures(old=old, new=new)
     assert diff["deltas"]["expiry"] == pytest.approx(0.20)
     assert diff["deltas"]["base"] == 0.0
+
+
+async def test_request_reprice_extracts_replay_tool_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """request_reprice must pull the structured replay_recommendation result
+    out of the Pricing stream's tool_calls (not just relay narration)."""
+    captured: dict[str, Any] = {}
+
+    async def fake_aggregate(peer, user_message, partner_id, *, session_id=None):
+        captured["peer"] = peer
+        captured["user_message"] = user_message
+        captured["partner_id"] = partner_id
+        return {
+            "narration": "Replayed under fresh coefficients: new price $6.50, "
+                         "expiry pressure now 0.21.",
+            "tool_calls": [{
+                "name": "replay_recommendation",
+                "args": {"recommendation_id":
+                         "11111111-1111-1111-1111-111111111111",
+                         "partner_id": "sk_demo"},
+                "response": {
+                    "status": "ok",
+                    "recommendation": {
+                        "recommendation_id":
+                            "55555555-5555-5555-5555-555555555555",
+                        "recommended_price": 6.50,
+                        "applied_pressures": {
+                            "base": 0.10, "expiry": 0.21, "inventory": 0.05,
+                            "time_of_day": 0.05, "merchant_floor": 0.10,
+                            "clamped_to_floor": False, "clamped_to_retail": False,
+                        },
+                        "formula_version": "v1",
+                        "replay_of": "11111111-1111-1111-1111-111111111111",
+                    },
+                },
+            }],
+            "event_count": 4,
+        }
+
+    from agents.dispute_triage import tools as dt
+    monkeypatch.setattr(dt.a2a, "aggregate_peer_stream", fake_aggregate)
+
+    out = await request_reprice(
+        original_recommendation_id="11111111-1111-1111-1111-111111111111",
+        partner_id="sk_demo",
+    )
+    assert captured["peer"] == "pricing"
+    assert "replay_recommendation" in captured["user_message"]
+    assert "11111111-1111-1111-1111-111111111111" in captured["user_message"]
+    assert captured["partner_id"] == "sk_demo"
+    assert out["status"] == "ok"
+    assert out["new_recommendation_id"] == "55555555-5555-5555-5555-555555555555"
+    assert out["new_price"] == 6.50
+    assert out["new_pressures"]["expiry"] == 0.21
+    assert "6.50" in out["narration"]
+
+
+async def test_request_reprice_returns_error_when_tool_response_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If Pricing's stream lacks a replay_recommendation function_response, we
+    can't derive the new id — surface a clean error rather than fabricating."""
+    async def fake_aggregate(*_: Any, **__: Any) -> dict[str, Any]:
+        return {"narration": "...", "tool_calls": [], "event_count": 1}
+
+    from agents.dispute_triage import tools as dt
+    monkeypatch.setattr(dt.a2a, "aggregate_peer_stream", fake_aggregate)
+
+    out = await request_reprice(
+        original_recommendation_id="11111111-1111-1111-1111-111111111111",
+        partner_id="sk_demo",
+    )
+    assert out["status"] == "error"
+    assert "replay_recommendation" in out["error"]
+
+
+async def test_request_reprice_rejects_invalid_uuid() -> None:
+    result = await request_reprice(
+        original_recommendation_id="not-a-uuid",
+        partner_id="sk_demo",
+    )
+    assert result["status"] == "validation_error"
+    assert result["field"] == "recommendation_id"

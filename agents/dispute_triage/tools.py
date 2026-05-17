@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from shared import a2a
 from shared.db import fetch_one, init_pool
 
 
@@ -74,3 +75,56 @@ async def diff_pressures(*, old: dict[str, Any], new: dict[str, Any]) -> dict[st
         else:
             deltas[k] = float(new_v) - float(old_v)
     return {"status": "ok", "deltas": deltas}
+
+
+async def request_reprice(
+    *,
+    original_recommendation_id: str,
+    partner_id: str,
+) -> dict[str, Any]:
+    """Ask Pricing to replay a prior recommendation under fresh coefficients.
+
+    Lateral A2A edge per CLAUDE.md ("Dispute Triage -> Pricing"). The Pricing
+    agent's `replay_recommendation` tool will INSERT a new `recommendation_log`
+    row tagged `replay_of=<original_recommendation_id>` and return its summary
+    as the `function_response` of the `replay_recommendation` tool call. We
+    extract that response from the aggregated tool_calls so the model gets a
+    structured `{new_recommendation_id, new_price, new_pressures}` payload —
+    no narration parsing required downstream.
+    """
+    try:
+        UUID(original_recommendation_id)
+    except ValueError:
+        return {"status": "validation_error",
+                "error": f"recommendation_id {original_recommendation_id!r} is not a valid UUID",
+                "field": "recommendation_id"}
+
+    user_message = (
+        "Please replay this prior recommendation using the replay_recommendation tool. "
+        f"Recommendation id: {original_recommendation_id}. "
+        f"Partner id: {partner_id}."
+    )
+    agg = await a2a.aggregate_peer_stream("pricing", user_message, partner_id)
+
+    replay_resp: dict[str, Any] | None = None
+    for tc in agg.get("tool_calls", []):
+        if tc.get("name") == "replay_recommendation" and isinstance(
+            tc.get("response"), dict,
+        ):
+            replay_resp = tc["response"]
+            break
+
+    if replay_resp is None or "recommendation" not in replay_resp:
+        return {"status": "error",
+                "error": "Pricing did not return a replay_recommendation "
+                         "tool response — cannot derive new_recommendation_id",
+                "narration": agg.get("narration", "")}
+
+    rec = replay_resp["recommendation"]
+    return {
+        "status": "ok",
+        "new_recommendation_id": str(rec["recommendation_id"]),
+        "new_price": float(rec["recommended_price"]),
+        "new_pressures": dict(rec.get("applied_pressures", {})),
+        "narration": agg["narration"],
+    }
