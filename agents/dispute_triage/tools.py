@@ -19,6 +19,7 @@ from uuid import UUID
 
 from shared import a2a
 from shared.db import fetch_one, init_pool
+from shared.webhook_events import emit_event
 
 
 async def fetch_recommendation_log(*, listing_id: str) -> dict[str, Any]:
@@ -177,3 +178,40 @@ async def persist_dispute(
     )
     assert row is not None
     return {"status": "ok", "dispute_id": str(row["dispute_id"])}
+
+
+_PRICE_UPDATE_THRESHOLD = 0.25
+
+
+async def emit_price_update_webhook(
+    *,
+    partner_id: str,
+    listing_id: str,
+    old_price: float,
+    new_price: float,
+    new_recommendation_id: str,
+) -> dict[str, Any]:
+    """Emit `price.updated` only when |delta| > $0.25 (master plan §6.2).
+
+    Below threshold is the dominant case: small repricings are signal noise.
+    Returning status='skipped' with a reason lets the calling prompt see
+    why no webhook fired without a separate query.
+    """
+    delta = abs(float(new_price) - float(old_price))
+    if delta <= _PRICE_UPDATE_THRESHOLD:
+        return {"status": "skipped",
+                "reason": f"|delta|={delta:.2f} <= threshold "
+                          f"{_PRICE_UPDATE_THRESHOLD}"}
+
+    payload = {
+        "listing_id": listing_id,
+        "old_price": float(old_price),
+        "new_price": float(new_price),
+        "new_recommendation_id": new_recommendation_id,
+    }
+    result = await emit_event(
+        event_type="price.updated",
+        partner_id=partner_id,
+        payload=payload,
+    )
+    return {"status": "ok", "delivery_ids": result.get("delivery_ids", [])}

@@ -7,6 +7,7 @@ import pytest
 
 from agents.dispute_triage.tools import (
     diff_pressures,
+    emit_price_update_webhook,
     fetch_recommendation_log,
     persist_dispute,
     request_reprice,
@@ -243,3 +244,86 @@ async def test_persist_dispute_rejects_empty_reason() -> None:
     )
     assert out["status"] == "validation_error"
     assert out["field"] == "reason_text"
+
+
+async def test_emit_price_update_webhook_calls_emit_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_emit_event(*, event_type: str, partner_id: str,
+                               payload: dict[str, Any]) -> dict[str, Any]:
+        captured["event_type"] = event_type
+        captured["partner_id"] = partner_id
+        captured["payload"] = payload
+        return {"status": "ok",
+                "delivery_ids": ["11111111-1111-1111-1111-111111111111"]}
+
+    from agents.dispute_triage import tools as dt
+    monkeypatch.setattr(dt, "emit_event", fake_emit_event)
+
+    out = await emit_price_update_webhook(
+        partner_id="sk_demo",
+        listing_id="22222222-2222-2222-2222-222222222222",
+        old_price=7.25, new_price=6.50,
+        new_recommendation_id="55555555-5555-5555-5555-555555555555",
+    )
+    assert captured["event_type"] == "price.updated"
+    assert captured["partner_id"] == "sk_demo"
+    assert captured["payload"]["listing_id"] == \
+        "22222222-2222-2222-2222-222222222222"
+    assert captured["payload"]["old_price"] == 7.25
+    assert captured["payload"]["new_price"] == 6.50
+    assert captured["payload"]["new_recommendation_id"] == \
+        "55555555-5555-5555-5555-555555555555"
+    assert out["status"] == "ok"
+    assert out["delivery_ids"] == ["11111111-1111-1111-1111-111111111111"]
+
+
+async def test_emit_price_update_webhook_skips_under_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """|7.25 - 7.10| = 0.15 <= 0.25 — emit_event must NOT be called."""
+    called = False
+
+    async def fake_emit_event(**_: Any) -> dict[str, Any]:
+        nonlocal called
+        called = True
+        return {"status": "ok", "delivery_ids": []}
+
+    from agents.dispute_triage import tools as dt
+    monkeypatch.setattr(dt, "emit_event", fake_emit_event)
+
+    out = await emit_price_update_webhook(
+        partner_id="sk_demo",
+        listing_id="22222222-2222-2222-2222-222222222222",
+        old_price=7.25, new_price=7.10,
+        new_recommendation_id="55555555-5555-5555-5555-555555555555",
+    )
+    assert out["status"] == "skipped"
+    assert "threshold" in out["reason"].lower()
+    assert called is False
+
+
+async def test_emit_price_update_webhook_fires_at_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """At exactly $0.25 delta, the threshold is `> 0.25` so it should NOT fire."""
+    called = False
+
+    async def fake_emit_event(**_: Any) -> dict[str, Any]:
+        nonlocal called
+        called = True
+        return {"status": "ok", "delivery_ids": []}
+
+    from agents.dispute_triage import tools as dt
+    monkeypatch.setattr(dt, "emit_event", fake_emit_event)
+
+    out = await emit_price_update_webhook(
+        partner_id="sk_demo",
+        listing_id="22222222-2222-2222-2222-222222222222",
+        old_price=7.50, new_price=7.25,  # exactly 0.25 delta
+        new_recommendation_id="55555555-5555-5555-5555-555555555555",
+    )
+    assert out["status"] == "skipped"
+    assert called is False
