@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock
 
-if TYPE_CHECKING:
-    import pytest
+import pytest
 
-from agents.dispute_triage.tools import fetch_recommendation_log
+from agents.dispute_triage.tools import diff_pressures, fetch_recommendation_log
 
 
 async def test_fetch_recommendation_log_returns_latest_row(
@@ -64,3 +62,36 @@ async def test_fetch_recommendation_log_rejects_invalid_uuid() -> None:
     result = await fetch_recommendation_log(listing_id="not-a-uuid")
     assert result["status"] == "validation_error"
     assert result["field"] == "listing_id"
+
+
+async def test_diff_pressures_signed_per_key() -> None:
+    old = {"base": 0.10, "expiry": 0.08, "inventory": 0.05,
+           "time_of_day": 0.05, "merchant_floor": 0.10,
+           "clamped_to_floor": False, "clamped_to_retail": False}
+    new = {"base": 0.10, "expiry": 0.21, "inventory": 0.05,
+           "time_of_day": 0.05, "merchant_floor": 0.10,
+           "clamped_to_floor": False, "clamped_to_retail": False}
+    diff = await diff_pressures(old=old, new=new)
+    assert diff["status"] == "ok"
+    deltas = diff["deltas"]
+    assert deltas["expiry"] == pytest.approx(0.13)
+    assert deltas["base"] == 0.0
+    # Boolean pressures: reported as -1/0/+1 transition signal
+    assert deltas["clamped_to_floor"] == 0
+
+
+async def test_diff_pressures_handles_clamp_transition() -> None:
+    old = {"base": 0.10, "clamped_to_floor": False, "clamped_to_retail": False}
+    new = {"base": 0.10, "clamped_to_floor": True,  "clamped_to_retail": False}
+    diff = await diff_pressures(old=old, new=new)
+    assert diff["deltas"]["clamped_to_floor"] == 1
+    assert diff["deltas"]["clamped_to_retail"] == 0
+
+
+async def test_diff_pressures_treats_missing_keys_as_zero() -> None:
+    """Keys present in only one map carry the present value as delta."""
+    old = {"base": 0.10}
+    new = {"base": 0.10, "expiry": 0.20}
+    diff = await diff_pressures(old=old, new=new)
+    assert diff["deltas"]["expiry"] == pytest.approx(0.20)
+    assert diff["deltas"]["base"] == 0.0

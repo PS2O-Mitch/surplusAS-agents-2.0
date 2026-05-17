@@ -50,3 +50,27 @@ async def fetch_recommendation_log(*, listing_id: str) -> dict[str, Any]:
         return {"status": "not_found",
                 "error": f"no recommendation found for listing_id {listing_id!r}"}
     return {"status": "ok", "recommendation": dict(row)}
+
+
+async def diff_pressures(*, old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    """Compute per-pressure delta (`new - old`).
+
+    Numeric pressures: float delta. Boolean clamp flags: -1/0/+1 transition.
+    Keys present in only one map carry the present value as the delta
+    (with the missing side treated as 0 / False).
+
+    Pure function — no DB, no A2A. Safe to call inside the model's
+    reasoning loop without IO.
+
+    async for ADK tool-surface consistency (see Phase 3 A2 review feedback).
+    """
+    keys = set(old) | set(new)
+    deltas: dict[str, Any] = {}
+    for k in keys:
+        old_v = old.get(k, 0)
+        new_v = new.get(k, 0)
+        if isinstance(old_v, bool) or isinstance(new_v, bool):
+            deltas[k] = int(bool(new_v)) - int(bool(old_v))
+        else:
+            deltas[k] = float(new_v) - float(old_v)
+    return {"status": "ok", "deltas": deltas}
