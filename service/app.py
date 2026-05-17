@@ -46,8 +46,10 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     from .routes_demo import router as demo_router
+    from .routes_disputes import router as disputes_router
     from .routes_rest import router as rest_router
     app.include_router(rest_router)
+    app.include_router(disputes_router)
     app.include_router(demo_router)
 
     if STATIC_DIR.is_dir():
