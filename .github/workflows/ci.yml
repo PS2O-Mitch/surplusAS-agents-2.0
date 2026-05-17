@@ -57,3 +57,6 @@ jobs:
 
       - name: Concierge eval (local)
         run: uv run python -m evals.runner --agent concierge --threshold 0.85 --mode local
+
+      - name: Dispute Triage eval (local)
+        run: uv run python -m evals.runner --agent dispute_triage --threshold 0.85 --mode local

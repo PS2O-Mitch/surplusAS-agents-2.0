@@ -57,14 +57,29 @@ Pytest markers (`pytest.ini`): `integration` (live PG / mocked Agent Engine), `e
 
 ## Module map
 
-- `service/app.py` — FastAPI gateway factory; mounts REST, demo shim, inbound A2A, static UI. `service/main.py` is the uvicorn entrypoint.
-- `agents/<name>/agent.py` + `manifest.yaml` — one directory per agent (`concierge`, `pricing`, `onboarding`, `listing_intake`, `dispute_triage`). The Pricing agent additionally owns `engine_adapter.py` (the only writer to `agents.recommendation_log`).
-- `shared/a2a.py` — outbound A2A client; owns ID-token caching and trace propagation. **All inter-agent calls go through this.**
+- `service/app.py` — FastAPI gateway factory; mounts REST, demo shim, dispute + webhook routes, static UI. `service/main.py` is the uvicorn entrypoint.
+- `service/routes_rest.py` — `POST /v1/concierge`, `GET /v1/listings/{id}`.
+- `service/routes_disputes.py` — `POST /v1/listings/{id}/dispute`, `GET /v1/disputes/{id}`. (Phase 4)
+- `service/routes_webhooks.py` — `POST /v1/webhooks/subscriptions`, `DELETE /v1/webhooks/subscriptions/{id}`. (Phase 4)
+- `service/routes_demo.py` — same-origin `/demo/v1/*` shims for the bundled static UI.
+- `agents/<name>/agent.py` + `manifest.yaml` — one directory per agent (`concierge`, `pricing`, `onboarding`, `listing_intake`, `dispute_triage`). The Pricing agent additionally owns `engine_adapter.py` (the only writer to `agents.recommendation_log`). The Dispute Triage agent owns the only writes to `agents.disputes` and is the only emitter of `price.updated` webhooks.
+- `shared/a2a.py` — outbound A2A client; owns ID-token caching, trace propagation, and the `aggregate_peer_stream` helper that extracts narration + tool calls from ADK streams. **All inter-agent calls go through this.**
+- `shared/auth.py` — `Authorization: Bearer <api_key>` resolver against `public.partner_keys`. Every public route uses `PartnerDep`.
 - `shared/db.py` — process-wide asyncpg pool via Cloud SQL Connector. Tests use `init_pool_from_dsn()` to bypass the connector.
-- `shared/schemas.py` — wire-format Pydantic contracts that cross agent boundaries (A2A envelopes, `RecommendationLogEntry`, webhook events). Agent-internal DTOs live with their owning agent.
-- `shared/config.py` — `get_settings()` (cached); 12-factor env-driven, secrets injected at container start.
+- `shared/schemas.py` — wire-format Pydantic contracts that cross agent boundaries (A2A envelopes, `RecommendationLogEntry`, `ValidationResult`, webhook events). Agent-internal DTOs live with their owning agent.
+- `shared/config.py` — `get_settings()` (cached); 12-factor env-driven, secrets injected at container start. `webhook_signing_key` reads from `WEBHOOK_SIGNING_KEY`.
+- `shared/webhook_dispatcher.py` — HMAC-SHA256 sign + httpx POST. Sync-with-audit-row semantics. (Phase 4)
+- `shared/webhook_subscriptions.py` — CRUD on `agents.webhook_subscriptions`. Stores SHA-256 of customer-provided secrets (Phase 5 will use them for inbound verification). (Phase 4)
+- `shared/webhook_events.py` — `emit_event(event_type, partner_id, payload)` orchestrator. Fan-out to active subscriptions, audit row per delivery, sync attempt. (Phase 4)
 - `shared/db_schema.sql` — DDL for the `agents` schema. Apply via `scripts/apply_schema.py`.
 - `infra/terraform/` — IAM, Cloud SQL user, Secret Manager. `vendor/surplusas-pricing/` is the pricing-engine submodule.
+
+## Webhook semantics (Phase 4)
+
+- **Signing:** every outbound delivery carries an `X-Surplus-Signature: sha256=<hex>` header. The HMAC is computed over the **exact JSON body bytes** (`separators=(",", ":")` — no whitespace) using the repo-wide `WEBHOOK_SIGNING_KEY` from Secret Manager. Customers verify with the same key (NOT the per-subscription secret — that field is reserved for future inbound verification).
+- **Delivery model:** sync-with-audit-row. The emitting agent INSERTs a `webhook_deliveries` row (`attempt=1`, `delivered_at=NULL`), POSTs, then UPDATEs the row with `last_status_code` + `delivered_at` (on 2xx) or `last_status_code` + `last_error` (otherwise). No background retry worker yet — failed rows accumulate for Phase 5/6.
+- **Threshold:** `price.updated` fires only when `|new_price - old_price| > $0.25`. Below threshold, the dispute still persists but no webhook ships. Pinned in `agents/dispute_triage/tools.py::_PRICE_UPDATE_THRESHOLD`.
+- **Event envelope:** every delivery body is `{event_id, event_type, partner_id, occurred_at, payload}` — the inner `payload` is event-type-specific.
 
 ## Operational gotchas
 
