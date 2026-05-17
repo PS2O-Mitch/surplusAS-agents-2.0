@@ -6,6 +6,7 @@ region: us-central1
 serviceAccount: onboarding-agent-sa@ps2o-surplusas-api.iam.gserviceaccount.com
 envFromSecretManager:
   - DB_PASSWORD
+  - WEBHOOK_SIGNING_KEY
 env:
   GOOGLE_GENAI_USE_VERTEXAI: "true"
   GOOGLE_CLOUD_PROJECT: ps2o-surplusas-api
