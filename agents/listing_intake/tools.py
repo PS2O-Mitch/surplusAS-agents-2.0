@@ -20,6 +20,7 @@ from uuid import UUID
 from shared import a2a
 from shared.db import fetch_one, init_pool
 from shared.pricing_intel import VALID_CATEGORIES
+from shared.webhook_events import emit_event
 
 
 def _decimal_or_none(value: Any) -> Decimal | None:
@@ -238,10 +239,34 @@ async def persist_listing(
         rec_uuid,
     )
     assert row is not None
-    return {
+    listing_id = str(row["listing_id"])
+    response = {
         "status": "ok",
-        "listing_id": str(row["listing_id"]),
+        "listing_id": listing_id,
         "recommendation_id": recommendation_id,
         "merchant_id": merchant_id,
         "listing_status": status,
     }
+
+    try:
+        emit_result = await emit_event(
+            event_type="listing.created",
+            partner_id=partner_id,
+            payload={
+                "listing_id": listing_id,
+                "merchant_id": merchant_id,
+                "recommendation_id": recommendation_id,
+                "title": draft["title"],
+                "category": draft["category"],
+                "units": int(draft["units"]),
+                "retail_value": str(retail),
+                "hours_until_expiry": str(expiry),
+                "listing_status": status,
+            },
+        )
+        response["webhook_status"] = emit_result.get("status", "unknown")
+        response["webhook_delivery_ids"] = emit_result.get("delivery_ids", [])
+    except Exception as exc:  # noqa: BLE001 — webhook failure is non-fatal
+        response["webhook_status"] = "error"
+        response["webhook_error"] = str(exc)[:500]
+    return response

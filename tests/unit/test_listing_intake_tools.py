@@ -205,6 +205,9 @@ async def test_persist_listing_inserts_with_recommendation_binding(
     monkeypatch.setattr(intake_tools, "fetch_one", fake_fetch_one)
     monkeypatch.setattr(intake_tools, "init_pool",
                         AsyncMock(return_value=_FakePool()))
+    monkeypatch.setattr(intake_tools, "emit_event",
+                        AsyncMock(return_value={"status": "ok",
+                                                "delivery_ids": []}))
 
     result = await intake_tools.persist_listing(
         draft={
@@ -277,6 +280,9 @@ async def test_persist_listing_does_not_double_acquire(
 
     monkeypatch.setattr(intake_tools, "init_pool", fake_init_pool)
     monkeypatch.setattr(intake_tools, "fetch_one", fake_fetch_one)
+    monkeypatch.setattr(intake_tools, "emit_event",
+                        AsyncMock(return_value={"status": "ok",
+                                                "delivery_ids": []}))
 
     await intake_tools.persist_listing(
         draft={
@@ -294,3 +300,86 @@ async def test_persist_listing_does_not_double_acquire(
         f"persist_listing called pool.acquire() {acquire_count} time(s); "
         "it should rely on fetch_one's internal acquisition."
     )
+
+
+async def test_persist_listing_emits_webhook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After a successful INSERT, emit `listing.created`."""
+    from agents.listing_intake import tools as intake_tools
+
+    captured: dict[str, Any] = {}
+
+    async def fake_emit_event(*, event_type: str, partner_id: str,
+                               payload: dict[str, Any]) -> dict[str, Any]:
+        captured["event_type"] = event_type
+        captured["partner_id"] = partner_id
+        captured["payload"] = payload
+        return {"status": "ok", "delivery_ids": ["d-1"]}
+
+    async def fake_fetch_one(sql: str, *args: Any) -> dict[str, Any]:
+        return {"listing_id": "22222222-2222-2222-2222-222222222222"}
+
+    monkeypatch.setattr(intake_tools, "emit_event", fake_emit_event)
+    monkeypatch.setattr(intake_tools, "fetch_one", fake_fetch_one)
+    monkeypatch.setattr(intake_tools, "init_pool", AsyncMock())
+
+    out = await intake_tools.persist_listing(
+        draft={
+            "title": "Day-old sandwiches",
+            "description": "deli-made",
+            "category": "prepared_meal",
+            "units": 10,
+            "retail_value": "12.00",
+            "hours_until_expiry": "4",
+            "image_uri": None,
+        },
+        recommendation_id="11111111-1111-1111-1111-111111111111",
+        merchant_id="33333333-3333-3333-3333-333333333333",
+        partner_id="sk_demo", status="draft",
+    )
+    assert out["status"] == "ok"
+    assert out["webhook_status"] == "ok"
+    assert out["webhook_delivery_ids"] == ["d-1"]
+    assert captured["event_type"] == "listing.created"
+    assert captured["partner_id"] == "sk_demo"
+    assert captured["payload"]["listing_id"] == \
+        "22222222-2222-2222-2222-222222222222"
+    assert captured["payload"]["recommendation_id"] == \
+        "11111111-1111-1111-1111-111111111111"
+    assert captured["payload"]["merchant_id"] == \
+        "33333333-3333-3333-3333-333333333333"
+    assert captured["payload"]["title"] == "Day-old sandwiches"
+    assert captured["payload"]["category"] == "prepared_meal"
+    assert captured["payload"]["units"] == 10
+    assert captured["payload"]["listing_status"] == "draft"
+
+
+async def test_persist_listing_succeeds_when_emit_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If emit_event raises, the primary INSERT must still surface ok."""
+    from agents.listing_intake import tools as intake_tools
+
+    async def fake_emit_event(**_: Any) -> dict[str, Any]:
+        raise RuntimeError("subscriptions DB unreachable")
+
+    async def fake_fetch_one(sql: str, *args: Any) -> dict[str, Any]:
+        return {"listing_id": "22222222-2222-2222-2222-222222222222"}
+
+    monkeypatch.setattr(intake_tools, "emit_event", fake_emit_event)
+    monkeypatch.setattr(intake_tools, "fetch_one", fake_fetch_one)
+    monkeypatch.setattr(intake_tools, "init_pool", AsyncMock())
+
+    out = await intake_tools.persist_listing(
+        draft={
+            "title": "x", "category": "prepared_meal",
+            "units": 1, "retail_value": "10", "hours_until_expiry": "4",
+        },
+        recommendation_id="11111111-1111-1111-1111-111111111111",
+        merchant_id="33333333-3333-3333-3333-333333333333",
+        partner_id="sk_demo",
+    )
+    assert out["status"] == "ok"
+    assert out["webhook_status"] == "error"
+    assert "subscriptions DB unreachable" in out.get("webhook_error", "")
