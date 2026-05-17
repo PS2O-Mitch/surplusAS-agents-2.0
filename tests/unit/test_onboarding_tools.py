@@ -51,7 +51,9 @@ async def test_create_merchant_profile_inserts_and_returns_uuid(
             "created_at": datetime(2026, 5, 1, 12, 0, tzinfo=UTC),
         }
     )
+    emit_mock = AsyncMock(return_value={"status": "ok", "delivery_ids": []})
     monkeypatch.setattr(tools, "fetch_one", fetch_one_mock)
+    monkeypatch.setattr(tools, "emit_event", emit_mock)
 
     out = await tools.create_merchant_profile(**_ok_kwargs())
 
@@ -247,3 +249,82 @@ async def test_set_region_returns_error_when_not_found(
     out = await tools.set_region(str(uuid4()), "US-FL")
     assert out["status"] == "validation_error"
     assert "not found" in out["error"]
+
+
+# ---------------------------------------------------------------------------
+# create_merchant_profile — webhook emission
+# ---------------------------------------------------------------------------
+
+
+async def test_create_merchant_profile_emits_webhook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After a successful INSERT, emit `merchant.profile.created`."""
+    from agents.onboarding import tools as ob
+
+    captured: dict[str, Any] = {}
+
+    async def fake_emit_event(*, event_type: str, partner_id: str,
+                               payload: dict[str, Any]) -> dict[str, Any]:
+        captured["event_type"] = event_type
+        captured["partner_id"] = partner_id
+        captured["payload"] = payload
+        return {"status": "ok", "delivery_ids": ["d-1"]}
+
+    async def fake_fetch_one(sql: str, *args: Any) -> dict[str, Any]:
+        import datetime as dt
+        return {"merchant_id":
+                "00000000-0000-0000-0000-000000000001",
+                "created_at": dt.datetime(2026, 5, 17, 12, 0, 0)}
+
+    monkeypatch.setattr(ob, "emit_event", fake_emit_event)
+    monkeypatch.setattr(ob, "fetch_one", fake_fetch_one)
+
+    out = await ob.create_merchant_profile(
+        partner_id="sk_demo",
+        merchant_name="Tampa Bagel Co",
+        region="US-FL-Hillsborough",
+        allowed_categories=["bakery", "prepared_meal"],
+        merchant_floor_pct=0.12,
+    )
+    assert out["status"] == "ok"
+    assert out["webhook_status"] == "ok"
+    assert out["webhook_delivery_ids"] == ["d-1"]
+    assert captured["event_type"] == "merchant.profile.created"
+    assert captured["partner_id"] == "sk_demo"
+    assert captured["payload"]["merchant_id"] == \
+        "00000000-0000-0000-0000-000000000001"
+    assert captured["payload"]["merchant_name"] == "Tampa Bagel Co"
+    assert captured["payload"]["region"] == "US-FL-Hillsborough"
+    assert captured["payload"]["allowed_categories"] == \
+        ["bakery", "prepared_meal"]
+
+
+async def test_create_merchant_profile_succeeds_when_emit_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If emit_event raises, the primary write must still succeed —
+    the audit row is the source of truth."""
+    from agents.onboarding import tools as ob
+
+    async def fake_emit_event(**_: Any) -> dict[str, Any]:
+        raise RuntimeError("subscriptions DB unreachable")
+
+    async def fake_fetch_one(sql: str, *args: Any) -> dict[str, Any]:
+        import datetime as dt
+        return {"merchant_id":
+                "00000000-0000-0000-0000-000000000001",
+                "created_at": dt.datetime(2026, 5, 17, 12, 0, 0)}
+
+    monkeypatch.setattr(ob, "emit_event", fake_emit_event)
+    monkeypatch.setattr(ob, "fetch_one", fake_fetch_one)
+
+    out = await ob.create_merchant_profile(
+        partner_id="sk_demo",
+        merchant_name="x",
+        region="US-FL",
+        allowed_categories=["bakery"],
+    )
+    assert out["status"] == "ok"
+    assert out["webhook_status"] == "error"
+    assert "subscriptions DB unreachable" in out.get("webhook_error", "")

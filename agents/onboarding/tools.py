@@ -21,6 +21,7 @@ from uuid import UUID
 
 from shared.db import execute, fetch_one
 from shared.pricing_intel import VALID_CATEGORIES
+from shared.webhook_events import emit_event
 
 
 def _validate_categories(allowed_categories: list[str]) -> str | None:
@@ -92,9 +93,10 @@ async def create_merchant_profile(
         timezone,
     )
     assert row is not None, "RETURNING is guaranteed to produce one row"
-    return {
+    merchant_id = str(row["merchant_id"])
+    response: dict[str, Any] = {
         "status": "ok",
-        "merchant_id": str(row["merchant_id"]),
+        "merchant_id": merchant_id,
         "created_at": row["created_at"].isoformat(),
         "merchant_name": merchant_name,
         "region": region,
@@ -102,6 +104,26 @@ async def create_merchant_profile(
         "merchant_floor_pct": merchant_floor_pct,
         "timezone": timezone,
     }
+
+    try:
+        emit_result = await emit_event(
+            event_type="merchant.profile.created",
+            partner_id=partner_id,
+            payload={
+                "merchant_id": merchant_id,
+                "merchant_name": merchant_name,
+                "region": region,
+                "allowed_categories": list(allowed_categories),
+                "merchant_floor_pct": merchant_floor_pct,
+                "timezone": timezone,
+            },
+        )
+        response["webhook_status"] = emit_result.get("status", "unknown")
+        response["webhook_delivery_ids"] = emit_result.get("delivery_ids", [])
+    except Exception as exc:  # noqa: BLE001 — webhook failure is non-fatal
+        response["webhook_status"] = "error"
+        response["webhook_error"] = str(exc)[:500]
+    return response
 
 
 async def set_floor_pct(merchant_id: str, merchant_floor_pct: float) -> dict[str, Any]:
