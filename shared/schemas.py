@@ -145,6 +145,15 @@ class MerchantProfile(BaseModel):
 # ---------------------------------------------------------------------------
 # Dispute (Dispute Triage write target) + result envelope.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Dispute lifecycle resolution states. The schema CHECK constraint
+# `agents/db_schema.sql` allows 'pending' + the three terminals below.
+# 'pending' is the insert default; PATCH targets only the terminals.
+# ---------------------------------------------------------------------------
+DisputeResolution = Literal["accepted", "rejected", "withdrawn"]
+
+
 class DisputeResult(BaseModel):
     dispute_id: UUID
     listing_id: UUID
