@@ -243,3 +243,54 @@ async def test_persist_listing_rejects_invalid_status() -> None:
     )
     assert result["status"] == "validation_error"
     assert result["field"] == "status"
+
+
+async def test_persist_listing_does_not_double_acquire(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """persist_listing must NOT wrap fetch_one in pool.acquire() — fetch_one
+    already acquires its own connection. A wrapper double-acquires and leaks
+    on high concurrency. This test catches a regression by counting acquires
+    on the pool returned by init_pool()."""
+    from agents.listing_intake import tools as intake_tools
+
+    acquire_count = 0
+
+    class _CountingPool:
+        def acquire(self):
+            nonlocal acquire_count
+            acquire_count += 1
+
+            class _Ctx:
+                async def __aenter__(self_inner) -> Any:
+                    return None
+                async def __aexit__(self_inner, *_: Any) -> None: ...
+            return _Ctx()
+
+    pool = _CountingPool()
+
+    async def fake_init_pool() -> _CountingPool:
+        return pool
+
+    async def fake_fetch_one(sql: str, *args: Any) -> dict[str, Any]:
+        return {"listing_id": "22222222-2222-2222-2222-222222222222"}
+
+    monkeypatch.setattr(intake_tools, "init_pool", fake_init_pool)
+    monkeypatch.setattr(intake_tools, "fetch_one", fake_fetch_one)
+
+    await intake_tools.persist_listing(
+        draft={
+            "title": "x", "description": None, "category": "prepared_meal",
+            "units": 1, "retail_value": "10.00", "hours_until_expiry": "4",
+            "image_uri": None,
+        },
+        recommendation_id="11111111-1111-1111-1111-111111111111",
+        merchant_id="33333333-3333-3333-3333-333333333333",
+        partner_id="sk_demo", status="draft",
+    )
+    # Zero acquires on the pool object from the caller — fetch_one does its
+    # own internal acquisition which we don't observe here (it's mocked).
+    assert acquire_count == 0, (
+        f"persist_listing called pool.acquire() {acquire_count} time(s); "
+        "it should rely on fetch_one's internal acquisition."
+    )

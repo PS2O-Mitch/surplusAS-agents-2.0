@@ -217,27 +217,26 @@ async def persist_listing(
             "field": "draft",
         }
 
-    pool = await init_pool()
-    async with pool.acquire():
-        row = await fetch_one(
-            "INSERT INTO agents.listings "
-            "  (merchant_id, partner_id, title, description, category, units, "
-            "   retail_value, hours_until_expiry, image_uri, status, "
-            "   initial_recommendation_id, current_recommendation_id) "
-            "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11) "
-            "RETURNING listing_id",
-            merch_uuid,
-            partner_id,
-            draft["title"],
-            draft.get("description"),
-            draft["category"],
-            int(draft["units"]),
-            retail,
-            expiry,
-            draft.get("image_uri"),
-            status,
-            rec_uuid,
-        )
+    await init_pool()
+    row = await fetch_one(
+        "INSERT INTO agents.listings "
+        "  (merchant_id, partner_id, title, description, category, units, "
+        "   retail_value, hours_until_expiry, image_uri, status, "
+        "   initial_recommendation_id, current_recommendation_id) "
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11) "
+        "RETURNING listing_id",
+        merch_uuid,
+        partner_id,
+        draft["title"],
+        draft.get("description"),
+        draft["category"],
+        int(draft["units"]),
+        retail,
+        expiry,
+        draft.get("image_uri"),
+        status,
+        rec_uuid,
+    )
     assert row is not None
     return {
         "status": "ok",
