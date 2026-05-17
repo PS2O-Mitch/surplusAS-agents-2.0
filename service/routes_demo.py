@@ -35,15 +35,20 @@ async def demo_agent(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def _compose_concierge_message(body: dict[str, Any]) -> str:
-    """Pack merchant_id / listing_id context hints into the user message string.
+    """Extract the merchant's text from either the new or legacy envelope.
 
-    ADK's Runner accepts a string (auto-wrapped as user content) but not the
-    `{mode, input}` envelope our internal A2A helper uses. We surface the
-    optional context fields as a leading bracketed prefix so the Concierge's
-    prompt can still see them, while keeping the message a plain string.
-    Image attachments are TODO Phase 4 (need multimodal Content wrapping).
+    The current REST contract uses `{message, merchant_id?, listing_id?, image?}`.
+    The bundled static demo (`service/static/surplusas-merchant-demo.html`) is
+    a port from SurplusAS-API-2.0 and still sends the legacy
+    `{mode, input, image?}` envelope — see line 863 of the page. Accept both
+    shapes here so the page works without a rewrite (the rewrite is the H6
+    item in OpenItems.md and lives in Phase 5).
+
+    ADK's Runner accepts a string (auto-wrapped as user content) but not a
+    dict envelope, so we materialise the actual merchant text into a string.
+    Context fields surface as a leading bracketed prefix.
     """
-    message = body.get("message", "")
+    message = body.get("message") or body.get("input") or ""
     parts: list[str] = []
     if body.get("merchant_id"):
         parts.append(f"merchant_id={body['merchant_id']}")

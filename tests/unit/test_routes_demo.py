@@ -43,6 +43,28 @@ def test_demo_agent_uses_demo_partner_id(
     assert captured["user_message"] == "I run a deli"
 
 
+def test_demo_agent_accepts_legacy_input_field(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient,
+) -> None:
+    """The bundled static page sends `{mode, input}` (API-2.0 era), not `{message}`."""
+    captured: dict[str, Any] = {}
+
+    async def fake_call_concierge(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"narration": "ok", "specialist_called": "onboarding",
+                "specialist_payload": {}, "event_count": 1}
+
+    monkeypatch.setattr("service.routes_demo.a2a.call_concierge",
+                        fake_call_concierge)
+
+    resp = client.post(
+        "/demo/v1/agent",
+        json={"mode": "listing_create", "input": "I run a deli in Tampa, FL"},
+    )
+    assert resp.status_code == 200
+    assert captured["user_message"] == "I run a deli in Tampa, FL"
+
+
 def test_demo_agent_prepends_context_to_message(
     monkeypatch: pytest.MonkeyPatch, client: TestClient,
 ) -> None:
