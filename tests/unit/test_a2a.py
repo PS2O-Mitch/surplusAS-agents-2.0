@@ -89,7 +89,11 @@ async def test_call_peer_agent_resolves_resource_and_returns_final_event(monkeyp
 
 
 async def test_call_peer_agent_raises_on_unconfigured_peer(monkeypatch):
-    monkeypatch.delenv("DISPUTE_TRIAGE_AGENT_RESOURCE", raising=False)
+    # `pydantic-settings` reads from .env as well as os.environ, so deleting
+    # the var from the process env isn't enough — set it to "" explicitly,
+    # which pydantic-settings respects as "unset". The empty-string branch
+    # in `_resolve_resource` is exactly what we want to exercise.
+    monkeypatch.setenv("DISPUTE_TRIAGE_AGENT_RESOURCE", "")
     get_settings.cache_clear()
 
     with pytest.raises(RuntimeError, match="DISPUTE_TRIAGE_AGENT_RESOURCE"):
