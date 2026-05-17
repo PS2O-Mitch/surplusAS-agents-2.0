@@ -13,6 +13,7 @@ This task (E1) adds only `fetch_recommendation_log`.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import UUID
 
@@ -128,3 +129,51 @@ async def request_reprice(
         "new_pressures": dict(rec.get("applied_pressures", {})),
         "narration": agg["narration"],
     }
+
+
+async def persist_dispute(
+    *,
+    listing_id: str,
+    merchant_id: str,
+    partner_id: str,
+    reason_text: str,
+    original_recommendation_id: str,
+    new_recommendation_id: str,
+    pressure_diff: dict[str, Any],
+) -> dict[str, Any]:
+    """Insert a row into `agents.disputes`.
+
+    Schema is from `shared/db_schema.sql:88`. Resolution defaults to 'pending';
+    the lifecycle endpoints that move it to 'accepted'/'rejected'/'withdrawn'
+    are Phase 5 work.
+
+    `pressure_diff` is the output of `diff_pressures(...)` — a flat dict of
+    per-key numeric deltas + bool transitions. Serialised to JSONB at bind
+    time so asyncpg passes it as a single typed parameter (no JSON column
+    surgery in the model).
+    """
+    try:
+        l_uuid = UUID(listing_id)
+        m_uuid = UUID(merchant_id)
+        orig_uuid = UUID(original_recommendation_id)
+        new_uuid = UUID(new_recommendation_id)
+    except ValueError as exc:
+        return {"status": "validation_error",
+                "error": f"invalid UUID: {exc}", "field": "uuid"}
+
+    if not reason_text or not reason_text.strip():
+        return {"status": "validation_error",
+                "error": "reason_text must be non-empty", "field": "reason_text"}
+
+    await init_pool()
+    row = await fetch_one(
+        "INSERT INTO agents.disputes "
+        "  (listing_id, merchant_id, partner_id, reason_text, "
+        "   original_recommendation_id, new_recommendation_id, pressure_diff) "
+        "VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb) "
+        "RETURNING dispute_id",
+        l_uuid, m_uuid, partner_id, reason_text,
+        orig_uuid, new_uuid, json.dumps(pressure_diff),
+    )
+    assert row is not None
+    return {"status": "ok", "dispute_id": str(row["dispute_id"])}

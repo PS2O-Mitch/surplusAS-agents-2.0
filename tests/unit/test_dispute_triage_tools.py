@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agents.dispute_triage.tools import diff_pressures, fetch_recommendation_log, request_reprice
+from agents.dispute_triage.tools import (
+    diff_pressures,
+    fetch_recommendation_log,
+    persist_dispute,
+    request_reprice,
+)
 
 
 async def test_fetch_recommendation_log_returns_latest_row(
@@ -180,3 +185,61 @@ async def test_request_reprice_rejects_invalid_uuid() -> None:
     )
     assert result["status"] == "validation_error"
     assert result["field"] == "recommendation_id"
+
+
+async def test_persist_dispute_inserts_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_sql: list[tuple[str, tuple[Any, ...]]] = []
+
+    async def fake_fetch_one(sql: str, *args: Any) -> dict[str, Any]:
+        captured_sql.append((sql, args))
+        return {"dispute_id": "44444444-4444-4444-4444-444444444444"}
+
+    from agents.dispute_triage import tools as dt
+    monkeypatch.setattr(dt, "fetch_one", fake_fetch_one)
+    monkeypatch.setattr(dt, "init_pool", AsyncMock())
+
+    out = await persist_dispute(
+        listing_id="22222222-2222-2222-2222-222222222222",
+        merchant_id="33333333-3333-3333-3333-333333333333",
+        partner_id="sk_demo",
+        reason_text="price moved too fast",
+        original_recommendation_id="11111111-1111-1111-1111-111111111111",
+        new_recommendation_id="55555555-5555-5555-5555-555555555555",
+        pressure_diff={"expiry": 0.13, "clamped_to_floor": 0},
+    )
+    assert out["status"] == "ok"
+    assert out["dispute_id"] == "44444444-4444-4444-4444-444444444444"
+
+    sql, args = captured_sql[0]
+    assert "INSERT INTO agents.disputes" in sql
+    assert "pressure_diff" in sql
+    # pressure_diff must be JSON-serialised before binding
+    assert any("expiry" in repr(a) for a in args)
+
+
+async def test_persist_dispute_rejects_invalid_uuid() -> None:
+    out = await persist_dispute(
+        listing_id="not-a-uuid",
+        merchant_id="33333333-3333-3333-3333-333333333333",
+        partner_id="sk_demo",
+        reason_text="x",
+        original_recommendation_id="11111111-1111-1111-1111-111111111111",
+        new_recommendation_id="55555555-5555-5555-5555-555555555555",
+        pressure_diff={},
+    )
+    assert out["status"] == "validation_error"
+    assert out["field"] == "uuid"
+
+
+async def test_persist_dispute_rejects_empty_reason() -> None:
+    out = await persist_dispute(
+        listing_id="22222222-2222-2222-2222-222222222222",
+        merchant_id="33333333-3333-3333-3333-333333333333",
+        partner_id="sk_demo",
+        reason_text="   ",  # whitespace-only
+        original_recommendation_id="11111111-1111-1111-1111-111111111111",
+        new_recommendation_id="55555555-5555-5555-5555-555555555555",
+        pressure_diff={},
+    )
+    assert out["status"] == "validation_error"
+    assert out["field"] == "reason_text"
