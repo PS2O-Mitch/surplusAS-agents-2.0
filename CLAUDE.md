@@ -59,7 +59,7 @@ Pytest markers (`pytest.ini`): `integration` (live PG / mocked Agent Engine), `e
 
 - `service/app.py` — FastAPI gateway factory; mounts REST, demo shim, dispute + webhook routes, static UI. `service/main.py` is the uvicorn entrypoint.
 - `service/routes_rest.py` — `POST /v1/concierge`, `GET /v1/listings/{id}`.
-- `service/routes_disputes.py` — `POST /v1/listings/{id}/dispute`, `GET /v1/disputes/{id}`. (Phase 4)
+- `service/routes_disputes.py` — `POST /v1/listings/{id}/dispute` (open), `GET /v1/disputes/{id}` (read), `PATCH /v1/disputes/{id}` (resolve + emit `dispute.resolved`). (Phase 4 + Phase 5)
 - `service/routes_webhooks.py` — `POST /v1/webhooks/subscriptions`, `DELETE /v1/webhooks/subscriptions/{id}`. (Phase 4)
 - `service/routes_demo.py` — same-origin `/demo/v1/*` shims for the bundled static UI.
 - `agents/<name>/agent.py` + `manifest.yaml` — one directory per agent (`concierge`, `pricing`, `onboarding`, `listing_intake`, `dispute_triage`). The Pricing agent additionally owns `engine_adapter.py` (the only writer to `agents.recommendation_log`). The Dispute Triage agent owns the only writes to `agents.disputes` and is the only emitter of `price.updated` webhooks.
@@ -74,12 +74,19 @@ Pytest markers (`pytest.ini`): `integration` (live PG / mocked Agent Engine), `e
 - `shared/db_schema.sql` — DDL for the `agents` schema. Apply via `scripts/apply_schema.py`.
 - `infra/terraform/` — IAM, Cloud SQL user, Secret Manager. `vendor/surplusas-pricing/` is the pricing-engine submodule.
 
-## Webhook semantics (Phase 4)
+## Webhook semantics
 
 - **Signing:** every outbound delivery carries an `X-Surplus-Signature: sha256=<hex>` header. The HMAC is computed over the **exact JSON body bytes** (`separators=(",", ":")` — no whitespace) using the repo-wide `WEBHOOK_SIGNING_KEY` from Secret Manager. Customers verify with the same key (NOT the per-subscription secret — that field is reserved for future inbound verification).
-- **Delivery model:** sync-with-audit-row. The emitting agent INSERTs a `webhook_deliveries` row (`attempt=1`, `delivered_at=NULL`), POSTs, then UPDATEs the row with `last_status_code` + `delivered_at` (on 2xx) or `last_status_code` + `last_error` (otherwise). No background retry worker yet — failed rows accumulate for Phase 5/6.
+- **Delivery model:** sync-with-audit-row. The emitting code path INSERTs a `webhook_deliveries` row (`attempt=1`, `delivered_at=NULL`), POSTs, then UPDATEs the row with `last_status_code` + `delivered_at` (on 2xx) or `last_status_code` + `last_error` (otherwise). No background retry worker yet — failed rows accumulate for Phase 6.
 - **Threshold:** `price.updated` fires only when `|new_price - old_price| > $0.25`. Below threshold, the dispute still persists but no webhook ships. Pinned in `agents/dispute_triage/tools.py::_PRICE_UPDATE_THRESHOLD`.
 - **Event envelope:** every delivery body is `{event_id, event_type, partner_id, occurred_at, payload}` — the inner `payload` is event-type-specific.
+- **Event ownership:**
+  - `merchant.profile.created` — Onboarding agent emits after `create_merchant_profile`. (Phase 5)
+  - `listing.created` — Listing Intake agent emits after `persist_listing`. (Phase 5)
+  - `price.updated` — Dispute Triage agent emits when `|delta| > $0.25` via `emit_price_update_webhook`. (Phase 4)
+  - `dispute.resolved` — the gateway route `PATCH /v1/disputes/{id}` emits after the resolution UPDATE. (Phase 5)
+- **Non-fatal emit:** webhook failures never fail the primary write. The tool/route returns `status: ok` with `webhook_status: error` and the audit row in `webhook_deliveries` is the source of truth. Future retry worker will sweep `delivered_at IS NULL` rows.
+- **Resolution lifecycle:** disputes are append-only at the resolution boundary. Once `pending -> accepted/rejected/withdrawn`, PATCH returns 409. No reopen workflow yet.
 
 ## Operational gotchas
 
