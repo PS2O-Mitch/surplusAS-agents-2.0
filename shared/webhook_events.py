@@ -70,8 +70,8 @@ async def emit_event(
     for sub in subs:
         row = await fetch_one(
             "INSERT INTO agents.webhook_deliveries "
-            "  (subscription_id, event_type, payload, attempt) "
-            "VALUES ($1, $2, $3::jsonb, 1) "
+            "  (subscription_id, event_type, payload, attempt, last_attempt_at) "
+            "VALUES ($1, $2, $3::jsonb, 1, NOW()) "
             "RETURNING delivery_id",
             UUID(sub["subscription_id"]), event_type,
             json.dumps(full_payload),

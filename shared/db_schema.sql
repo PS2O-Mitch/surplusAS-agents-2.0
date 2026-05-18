@@ -126,8 +126,25 @@ CREATE TABLE IF NOT EXISTS agents.webhook_deliveries (
     last_status_code     INT,
     last_error           TEXT,
     delivered_at         TIMESTAMPTZ,
+    last_attempt_at      TIMESTAMPTZ,
     created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS webhook_deliveries_pending_idx
     ON agents.webhook_deliveries (subscription_id, created_at)
+    WHERE delivered_at IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- Phase 6 migration: async webhook retry worker support.
+--
+-- Adds `last_attempt_at` to `webhook_deliveries` so the retry worker can
+-- compute backoff windows (2^attempt seconds since the most recent attempt).
+-- NULL on legacy rows; the worker falls back to `created_at` via COALESCE.
+--
+-- The partial index supports the retry candidate query (delivered_at IS NULL).
+-- ---------------------------------------------------------------------------
+ALTER TABLE agents.webhook_deliveries
+    ADD COLUMN IF NOT EXISTS last_attempt_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS webhook_deliveries_retry_idx
+    ON agents.webhook_deliveries (delivered_at, attempt, last_attempt_at)
     WHERE delivered_at IS NULL;
