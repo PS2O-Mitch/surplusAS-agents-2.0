@@ -77,7 +77,17 @@ Pytest markers (`pytest.ini`): `integration` (live PG / mocked Agent Engine), `e
 ## Webhook semantics
 
 - **Signing:** every outbound delivery carries an `X-Surplus-Signature: sha256=<hex>` header. The HMAC is computed over the **exact JSON body bytes** (`separators=(",", ":")` — no whitespace) using the repo-wide `WEBHOOK_SIGNING_KEY` from Secret Manager. Customers verify with the same key (NOT the per-subscription secret — that field is reserved for future inbound verification).
-- **Delivery model:** sync-with-audit-row. The emitting code path INSERTs a `webhook_deliveries` row (`attempt=1`, `delivered_at=NULL`), POSTs, then UPDATEs the row with `last_status_code` + `delivered_at` (on 2xx) or `last_status_code` + `last_error` (otherwise). No background retry worker yet — failed rows accumulate for Phase 6.
+- **Delivery model:** sync-first-attempt + async retry. The emitter (agent tool or gateway route) does the first POST synchronously and INSERTs the audit row in `webhook_deliveries` (`attempt=1`, `last_attempt_at=NOW()`). Failed rows are swept by the background retry loop in the gateway — `shared/webhook_retry.py:retry_failed_deliveries`, spawned by `service/app.py:_lifespan` (Phase 6).
+- **Retry schedule:** `2^attempt` seconds between attempts (2s, 4s, 8s, 16s, 32s). After `attempt=5` the row is a dead-letter — never retried, just sits as audit trail. Polling interval: 30s (`WEBHOOK_RETRY_INTERVAL_S`). Batch limit per cycle: 100 rows (`WEBHOOK_RETRY_BATCH_LIMIT`). Backoff window is computed in SQL via `COALESCE(last_attempt_at, created_at) + POWER(2, attempt) * INTERVAL '1 second' <= NOW()`.
+- **Idempotency contract:** every retry sends the SAME `event_id`. Customers MUST dedupe on `event_id`. Industry-standard pattern.
+- **Subscriptions that go inactive (`active=FALSE`) are skipped by the retry worker** — we don't re-ping unsubscribed customers. Their pending dead-letter rows remain as audit.
+- **Operator triage of dead-letters:**
+  ```sql
+  SELECT delivery_id, event_type, attempt, last_status_code, last_error, created_at
+  FROM agents.webhook_deliveries
+  WHERE delivered_at IS NULL AND attempt >= 5
+  ORDER BY created_at DESC;
+  ```
 - **Threshold:** `price.updated` fires only when `|new_price - old_price| > $0.25`. Below threshold, the dispute still persists but no webhook ships. Pinned in `agents/dispute_triage/tools.py::_PRICE_UPDATE_THRESHOLD`.
 - **Event envelope:** every delivery body is `{event_id, event_type, partner_id, occurred_at, payload}` — the inner `payload` is event-type-specific.
 - **Event ownership:**
