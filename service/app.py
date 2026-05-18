@@ -7,7 +7,9 @@ on app startup.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+import asyncio
+import logging
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -17,11 +19,35 @@ from fastapi.staticfiles import StaticFiles
 from shared.config import get_settings
 from shared.logging import init_logging
 from shared.tracing import init_tracing
+from shared.webhook_retry import retry_failed_deliveries
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+_log = logging.getLogger("surplusas.gateway.webhook_retry")
+
+
+async def _webhook_retry_loop() -> None:
+    """Periodically sweep failed webhook deliveries.
+
+    Phase 6 ships this as an in-process background task on the gateway.
+    Phase 7+ can extract to a dedicated Cloud Run job if redelivery SLOs
+    demand independent scaling. A failed sweep is logged-and-continued —
+    a transient DB or HTTP failure must not kill the loop, otherwise we
+    silently lose retry coverage until the gateway restarts.
+    """
+    settings = get_settings()
+    interval = settings.webhook_retry_interval_s
+    limit = settings.webhook_retry_batch_limit
+
+    while True:
+        try:
+            await retry_failed_deliveries(limit=limit)
+        except Exception as exc:  # noqa: BLE001 — log but never kill the loop
+            _log.warning("webhook retry sweep failed: %s", exc, exc_info=True)
+        await asyncio.sleep(interval)
 
 
 @asynccontextmanager
@@ -30,7 +56,15 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     init_logging(settings.log_level)
     init_tracing("surplusas-agents-gateway")
     # DB pool initialised lazily on first use; tests override this entirely.
-    yield
+    retry_task = asyncio.create_task(
+        _webhook_retry_loop(), name="webhook-retry-loop",
+    )
+    try:
+        yield
+    finally:
+        retry_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await retry_task
 
 
 def create_app() -> FastAPI:

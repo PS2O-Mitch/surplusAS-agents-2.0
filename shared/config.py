@@ -53,6 +53,8 @@ class Settings(BaseSettings):
 
     # --- Webhooks -------------------------------------------------------
     webhook_signing_key: str = ""
+    webhook_retry_interval_s: int = 30
+    webhook_retry_batch_limit: int = 100
 
     # --- Service --------------------------------------------------------
     log_level: str = "INFO"
