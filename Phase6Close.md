@@ -49,35 +49,58 @@
 | **M6** — `_handle_cache` autouse-fixture cleanup | `tests/unit/test_a2a.py` | Phase 7 hardening |
 | **L1–L5** — cosmetic / docs | various | Phase 7 hardening |
 
-## Required manual step before deploying the gateway
+## Verification log (live, 2026-05-18)
 
-`shared/db_schema.sql` was updated to include `last_attempt_at` + the partial index, BUT the live Cloud SQL DB has not yet been migrated. Before deploying the gateway with the Phase 6 code, run:
+### Schema migration applied
 
-```powershell
-PG_USER=surplusas_app `
-  PG_PASSWORD=$(gcloud secrets versions access latest `
-    --secret=db-app-password --project=ps2o-surplusas-api) `
-  uv run python scripts/apply_schema.py
+```
+$ PG_USER=surplusas_app PG_PASSWORD=<secret db-app-password> uv run python scripts/apply_schema.py
+Applying db_schema.sql to ps2o-surplusas-api:us-central1:surplusas-db/surplusas as surplusas_app...
+Schema apply complete.
 ```
 
-The migration is idempotent (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`) so re-running is safe. After the apply, the gateway can deploy and the retry loop will start sweeping.
+Post-apply column + index check:
 
-If the gateway is deployed before the migration applies, the FIRST webhook emission will fail with a column-not-found error (since `webhook_events.py` now INSERTs into `last_attempt_at`). Apply the migration first.
-
-## Manual end-to-end verification (recommended)
-
-```powershell
-uv run python -m service.main
+```
+Columns in webhook_deliveries:
+ - delivery_id, subscription_id, event_type, payload, attempt,
+   last_status_code, last_error, delivered_at, created_at, last_attempt_at
+Indexes:
+ - webhook_deliveries_pending_idx
+ - webhook_deliveries_pkey
+ - webhook_deliveries_retry_idx          ← Phase 6
 ```
 
-Then induce a failure: create a subscription pointing at a URL that returns 503 (e.g., a local stub), emit an event, then watch the `agents.webhook_deliveries` row evolve over ~32 seconds:
+The migration is idempotent (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`); re-running is safe.
 
-```sql
-SELECT delivery_id, attempt, last_status_code, last_attempt_at,
-       delivered_at, created_at
-FROM agents.webhook_deliveries
-WHERE delivery_id = '<your_id>'
-ORDER BY last_attempt_at DESC NULLS LAST;
+### End-to-end retry cycle (live Cloud SQL + local 503 stub + local gateway)
+
+Setup: local 503 stub on `127.0.0.1:8765`, local gateway on `:9090` with `WEBHOOK_RETRY_INTERVAL_S=1`, a temporary subscription pointing at the stub, `emit_event` called once for `price.updated`. Audit row polled every 2s.
+
+```
+[driver] inserted subscription b6b39c0e-... -> http://127.0.0.1:8765/hook
+[driver] emit_event result: {'status': 'ok', 'delivery_ids': ['0a051552-...']}
+[driver +  0.1s] attempt=1 status=503  (initial sync emit)
+[driver +  2.2s] attempt=2 status=503  (+2s backoff = 2^1)
+[driver +  8.4s] attempt=3 status=503  (+4s backoff = 2^2; +2s connector overhead)
+[driver + 16.6s] attempt=4 status=503  (+8s backoff = 2^3)
+[driver + 33.2s] attempt=5 status=503  DEAD-LETTERED (+16s backoff = 2^4)
+[driver] cleanup: deliveries=DELETE 1 subscription=DELETE 1
 ```
 
-Expected progression: attempt goes 1 → 2 → 3 → 4 → 5 over ~32 seconds (assuming `WEBHOOK_RETRY_INTERVAL_S=0` for fast testing; with the default 30s it takes ~3 minutes). After attempt=5, the row is dead — no further retries.
+Stub-side: 5 POSTs observed with `X-Surplus-Signature` headers; retries all carried the same signature (same event_id + payload → same HMAC), confirming the idempotency contract on the wire.
+
+### Bug surfaced (and fixed) by live verification
+
+`shared/webhook_events.py:77` was calling `UUID(sub["subscription_id"])` without first stringifying. Every existing unit/integration test stubs `list_active_subscriptions_for_event` to return a *str* `subscription_id`, but the live asyncpg connection returns `asyncpg.pgproto.UUID`, and the stdlib `uuid.UUID()` constructor calls `.replace()` on its argument — which raises `AttributeError` on non-str inputs.
+
+The Phase 6 retry path on `shared/webhook_retry.py:77` already did `UUID(str(row["delivery_id"]))` defensively; emit_event just missed the cast. One-line fix landed in the same commit as the verification log; regression test `test_emit_event_accepts_non_string_subscription_id` added that stubs subscription_id with a stdlib `uuid.UUID` (same shape — no `.replace`).
+
+This bug had been latent in production code since Phase 4 — `agents.webhook_deliveries` had zero rows when verification ran, confirming no real customer subscription had ever exercised the path before this test.
+
+### Final verification sweep (post-fix)
+
+- `pytest tests/unit -q` — **127 passed** (was 126; +1 regression)
+- `pytest tests/integration -m integration -q` — **18 passed**
+- `ruff check .` — clean
+- Live e2e retry cycle — attempts 1→5 observed in DB, all 5 POSTs observed on the stub, signatures present
