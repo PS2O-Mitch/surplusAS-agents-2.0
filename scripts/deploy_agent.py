@@ -118,8 +118,19 @@ def _load_agent_object(name: str) -> Any:
     return mod.agent
 
 
-def deploy(name: str) -> str:
-    """Deploy the named agent. Returns the resulting resource name."""
+def deploy(name: str, *, wrapper: str = "adk") -> str:
+    """Deploy the named agent. Returns the resulting resource name.
+
+    `wrapper="adk"` (default) wraps the agent in `AdkApp` and exposes
+    `async_stream_query` over the legacy `reasoningEngines` RPC surface.
+
+    `wrapper="a2a"` wraps the agent in `A2aAgent` (Vertex's native A2A
+    template) so peers can talk JSON-RPC against it and discover its
+    Agent Card. Used by the Phase 7a A2A migration spike.
+    """
+    if wrapper not in ("adk", "a2a"):
+        raise ValueError(f"unknown wrapper: {wrapper!r}; expected 'adk' or 'a2a'")
+
     manifest = _load_manifest(name)
     agent_obj = _load_agent_object(name)
 
@@ -165,7 +176,7 @@ def deploy(name: str) -> str:
     requirements = [
         "google-adk>=2.0.0b1",
         "google-genai>=0.5.0",
-        "google-cloud-aiplatform>=1.149.0",
+        "google-cloud-aiplatform>=1.153.1",
         "google-cloud-secret-manager>=2.20.0",
         "google-auth>=2.35.0",
         "asyncpg>=0.30.0",
@@ -179,6 +190,11 @@ def deploy(name: str) -> str:
         "opentelemetry-sdk>=1.27.0",
         "opentelemetry-exporter-gcp-trace>=1.7.0",
     ]
+    if wrapper == "a2a":
+        # a2a-sdk pulls in starlette + uvicorn server bits that A2aAgent uses
+        # to serve JSON-RPC. Keep adjacent to the wrapper switch so the deps
+        # don't drift if the spike is rolled back.
+        requirements.append("a2a-sdk>=0.3.4")
 
     # `extra_packages` are paths to local packages to vendor into the deployed
     # bundle. We need the whole repo so the deployed agent can resolve
@@ -197,11 +213,30 @@ def deploy(name: str) -> str:
         "vendor/surplusas-pricing",
     ]
 
-    # Wrap in AdkApp ourselves with an explicit app_name. Otherwise AdkApp's
-    # set_up() falls back to GOOGLE_CLOUD_AGENT_ENGINE_ID (a numeric resource
-    # id) which fails ADK's `App.name` validator (isidentifier() == False on
-    # purely-numeric strings) — Pydantic ValidationError at engine startup.
-    adk_app = AdkApp(agent=agent_obj, app_name=name, enable_tracing=True)
+    # Choose the wrapper. AdkApp is the legacy / default path; A2aAgent is the
+    # native A2A template that exposes JSON-RPC + Agent Card on the deployed
+    # engine (Phase 7a spike).
+    if wrapper == "adk":
+        # Wrap in AdkApp ourselves with an explicit app_name. Otherwise AdkApp's
+        # set_up() falls back to GOOGLE_CLOUD_AGENT_ENGINE_ID (a numeric resource
+        # id) which fails ADK's `App.name` validator (isidentifier() == False on
+        # purely-numeric strings) — Pydantic ValidationError at engine startup.
+        deployable: Any = AdkApp(agent=agent_obj, app_name=name, enable_tracing=True)
+    else:
+        from vertexai.agent_engines.templates.a2a import A2aAgent
+
+        from agents._a2a_bridge import build_adk_executor, build_default_card
+
+        card = build_default_card(
+            agent_name=name,
+            description=str(manifest.description or display_name),
+            # Vertex overrides the URL at deploy; placeholder is fine.
+            a2a_url=f"https://{location}-aiplatform.googleapis.com/v1/{name}",
+        )
+        deployable = A2aAgent(
+            agent_card=card,
+            agent_executor_builder=build_adk_executor(agent_obj),
+        )
 
     # Build the env_vars dict the SDK forwards into the deployed container's
     # process environment. Plain values from manifest.env, SecretRef-backed
@@ -266,7 +301,7 @@ def deploy(name: str) -> str:
     print(f"env_vars: {sorted(env_vars.keys())}")
 
     remote = agent_engines.create(
-        adk_app,  # type: ignore[arg-type]
+        deployable,  # type: ignore[arg-type]
         display_name=display_name,
         requirements=requirements,
         extra_packages=extra_packages,
@@ -286,10 +321,16 @@ def deploy(name: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Deploy a SurplusAS agent to Agent Engine")
     parser.add_argument("--name", required=True, choices=VALID_AGENTS)
+    parser.add_argument(
+        "--wrapper",
+        choices=("adk", "a2a"),
+        default="adk",
+        help="Engine wrapper: 'adk' (default, legacy) or 'a2a' (native A2A).",
+    )
     args = parser.parse_args(argv)
 
     try:
-        deploy(args.name)
+        deploy(args.name, wrapper=args.wrapper)
     except Exception as exc:  # noqa: BLE001 — top-level CLI; surface anything cleanly
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
