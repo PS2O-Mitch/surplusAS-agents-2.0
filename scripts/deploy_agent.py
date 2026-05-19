@@ -27,8 +27,28 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import BaseModel, ConfigDict, Field
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+class AgentManifest(BaseModel):
+    """Schema for `agents/<name>/manifest.yaml`.
+
+    Validated at deploy time so a bad manifest fails with a clear pydantic
+    error, not a `KeyError` from deep inside `agent_engines.create()`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    displayName: str
+    description: str = ""
+    agentFramework: str = "ADK"
+    model: str
+    region: str = "us-central1"
+    serviceAccount: str
+    envFromSecretManager: list[str] = Field(default_factory=list)
+    env: dict[str, str | int | bool | float] = Field(default_factory=dict)
 
 VALID_AGENTS = ("concierge", "pricing", "onboarding", "listing_intake", "dispute_triage")
 
@@ -78,12 +98,13 @@ _VERTEX_RESERVED_ENV = frozenset(
 )
 
 
-def _load_manifest(name: str) -> dict[str, Any]:
+def _load_manifest(name: str) -> AgentManifest:
     manifest_path = REPO_ROOT / "agents" / name / "manifest.yaml"
     if not manifest_path.is_file():
         raise FileNotFoundError(f"manifest missing: {manifest_path}")
     with manifest_path.open(encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        raw = yaml.safe_load(f)
+    return AgentManifest.model_validate(raw)
 
 
 def _load_agent_object(name: str) -> Any:
@@ -107,10 +128,10 @@ def deploy(name: str) -> str:
     from vertexai import agent_engines
     from vertexai.agent_engines.templates.adk import AdkApp
 
-    project = manifest.get("env", {}).get("GOOGLE_CLOUD_PROJECT", "ps2o-surplusas-api")
-    location = manifest.get("region", "us-central1")
-    display_name = manifest["displayName"]
-    service_account = manifest["serviceAccount"]
+    project = str(manifest.env.get("GOOGLE_CLOUD_PROJECT", "ps2o-surplusas-api"))
+    location = manifest.region
+    display_name = manifest.displayName
+    service_account = manifest.serviceAccount
 
     # Agent Engine uploads the `extra_packages` tarball to GCS before building the
     # container, so `vertexai.init` requires a staging bucket. Override with
@@ -189,7 +210,7 @@ def deploy(name: str) -> str:
     # local dev, so shared/config.py needs no changes.
     env_vars: dict[str, Any] = {}
     skipped_reserved: list[str] = []
-    for env_key, env_value in (manifest.get("env") or {}).items():
+    for env_key, env_value in manifest.env.items():
         if env_key in _VERTEX_RESERVED_ENV:
             # Vertex Agent Engine injects these itself; including them is a 400.
             skipped_reserved.append(env_key)
@@ -197,7 +218,7 @@ def deploy(name: str) -> str:
         # YAML loader parses unquoted "true"/"8080" as bool/int — normalise
         # to str because the SDK's EnvVar proto requires a string value.
         env_vars[env_key] = str(env_value)
-    for secret_env in manifest.get("envFromSecretManager") or []:
+    for secret_env in manifest.envFromSecretManager:
         if secret_env in _VERTEX_RESERVED_ENV:
             skipped_reserved.append(secret_env)
             continue

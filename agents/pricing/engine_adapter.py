@@ -266,6 +266,15 @@ async def replay_recommendation(recommendation_id: UUID) -> RecommendationLogEnt
     the engine with whatever coefficients + anchors are current at replay
     time, inserts a new row with `replay_of=<recommendation_id>`. The
     original row is never UPDATEd (guardrail #3).
+
+    Concurrency: this is the SELECT-then-INSERT path Dispute Triage drives.
+    We rely on the engine being deterministic for a given (pricing_input,
+    coefficients_version, anchor) tuple, so two concurrent replays of the
+    same `recommendation_id` produce two byte-identical new rows with
+    different `recommendation_id`s — extra audit, not a data race. We do
+    NOT take an advisory lock; if a future change makes the formula
+    non-deterministic OR adds an UPDATE on the original row, revisit and
+    add a `pg_advisory_xact_lock(hashtext(recommendation_id::text))` here.
     """
     pool = await init_pool()
     async with pool.acquire() as conn:

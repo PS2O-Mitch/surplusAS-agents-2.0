@@ -290,9 +290,9 @@ Pure read; not a real issue at contest scale (single-merchant demo). Worth a com
 
 If `expected_specialist` is the empty string in a case file, the metric silently treats it as "no expectation." Either default to `None` and short-circuit, or assert non-empty in `_load_golden`.
 
-### L5. `tests/conftest.py::anyio_backend` is unused [LOW]
+### L5. `tests/conftest.py::anyio_backend` is unused [LOW] — **RESOLVED**
 
-`anyio` isn't a dependency; `pytest-asyncio` (via `asyncio_mode = "auto"` in `pyproject.toml`) is what runs async tests. The fixture is harmless but cosmetic dead code. Delete.
+`anyio` isn't a dependency; `pytest-asyncio` (via `asyncio_mode = "auto"` in `pyproject.toml`) is what runs async tests. The fixture is harmless but cosmetic dead code. ~~Delete.~~ Already removed in an earlier phase — `conftest.py` now only contains `_clear_a2a_handle_cache`.
 
 ---
 

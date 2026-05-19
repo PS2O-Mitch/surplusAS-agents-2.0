@@ -58,6 +58,18 @@ def _load_golden(agent: str) -> list[dict[str, Any]]:
             if not line or line.startswith("#"):
                 continue
             cases.append(json.loads(line))
+
+    # Concierge route eval requires `expected_specialist` on every case —
+    # without it, `route_correctness` silently scores against an empty
+    # string, which is not the intent. Assert at load time so a malformed
+    # case fails the runner rather than silently inflating the score.
+    if agent == "concierge":
+        missing = [c.get("case_id", "?") for c in cases if not c.get("expected_specialist")]
+        if missing:
+            raise ValueError(
+                f"concierge cases missing expected_specialist: {missing}"
+            )
+
     return cases
 
 
@@ -122,7 +134,7 @@ def _run_pricing_local(case: dict[str, Any]) -> CaseResult:
 # ---------------------------------------------------------------------------
 
 
-def _run_concierge_local(case: dict[str, Any]) -> CaseResult:
+def _run_concierge_local_stub(case: dict[str, Any]) -> CaseResult:
     """Pseudo-eval: assert the case carries the routing intent we expect.
 
     Concierge route eval needs Gemini to actually run, which the canonical
@@ -222,7 +234,7 @@ def _run_local_for(agent: str, cases: list[dict[str, Any]]) -> list[CaseResult]:
     if agent == "pricing":
         return [_run_pricing_local(c) for c in cases]
     if agent == "concierge":
-        return [_run_concierge_local(c) for c in cases]
+        return [_run_concierge_local_stub(c) for c in cases]
     # Onboarding / listing_intake / dispute_triage local mode is structural
     # only: we just assert the case has an `input` block and an
     # `expected_status`. Real semantic evals run in remote mode.

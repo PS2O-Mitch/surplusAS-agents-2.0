@@ -48,10 +48,8 @@ def _seed_pricing_resource(monkeypatch: pytest.MonkeyPatch) -> None:
         "PRICING_AGENT_RESOURCE",
         "projects/1/locations/us-central1/reasoningEngines/pricing-id",
     )
-    a2a._handle_cache.clear()
     yield
     get_settings.cache_clear()
-    a2a._handle_cache.clear()
 
 
 async def test_dispute_to_pricing_wire_shape(monkeypatch: pytest.MonkeyPatch) -> None:

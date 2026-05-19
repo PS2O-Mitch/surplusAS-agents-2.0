@@ -29,7 +29,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from service.app import create_app
-from shared import a2a
 from shared.auth import PartnerContext, require_partner
 from shared.config import get_settings
 
@@ -53,9 +52,7 @@ def _seed_resources(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
                        "projects/1/locations/us-central1/reasoningEngines/dispute")
     monkeypatch.setenv("PRICING_AGENT_RESOURCE",
                        "projects/1/locations/us-central1/reasoningEngines/pricing")
-    a2a._handle_cache.clear()
     yield
-    a2a._handle_cache.clear()
     get_settings.cache_clear()
 
 
