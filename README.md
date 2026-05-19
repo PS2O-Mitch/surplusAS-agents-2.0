@@ -45,7 +45,7 @@ uv run python -m evals.runner --agent all --threshold 0.85
 
 ## Architecture
 
-See [`/docs/architecture.md`](docs/architecture.md) (TODO Week 1) for the agent topology, A2A edges, and data flow. The implementation plan lives at `~/.claude/plans/the-ending-of-the-shimmering-reef.md`.
+See [`docs/architecture.md`](docs/architecture.md) for the agent topology (hub-and-spoke with two lateral A2A edges), the Beat 1 + Beat 2 sequence diagrams, and the hard guardrails on the data plane. The implementation plan lives at `~/.claude/plans/the-ending-of-the-shimmering-reef.md`.
 
 ## License
 
