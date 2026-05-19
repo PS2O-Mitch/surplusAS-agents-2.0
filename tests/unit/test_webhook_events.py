@@ -77,6 +77,45 @@ async def test_emit_event_no_subscriptions_returns_empty(
     assert deliver_mock.call_count == 0
 
 
+async def test_emit_event_accepts_non_string_subscription_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: live Cloud SQL returns subscription_id as asyncpg's UUID
+    type, not str. Phase 6 e2e surfaced that emit_event was calling
+    UUID(sub["subscription_id"]) which raises AttributeError on non-str
+    UUID-like values. The str() cast on shared/webhook_events.py keeps this
+    code path honest. Stdlib uuid.UUID has the same shape (no .replace),
+    so it doubles as a stand-in for asyncpg.pgproto.UUID here.
+    """
+    import uuid
+
+    from shared import webhook_events as we
+
+    monkeypatch.setattr(
+        we, "list_active_subscriptions_for_event",
+        AsyncMock(return_value=[
+            {"subscription_id":
+                 uuid.UUID("44444444-4444-4444-4444-444444444444"),
+             "url": "https://a.com", "events": ["price.updated"]},
+        ]),
+    )
+    monkeypatch.setattr(we, "deliver",
+                         AsyncMock(return_value={"status_code": 200}))
+    monkeypatch.setattr(we, "fetch_one",
+                         AsyncMock(return_value={
+                             "delivery_id":
+                                 "11111111-1111-1111-1111-111111111111"}))
+    monkeypatch.setattr(we, "execute", AsyncMock(return_value="UPDATE 1"))
+    monkeypatch.setattr(we, "init_pool", AsyncMock())
+
+    out = await emit_event(
+        event_type="price.updated", partner_id="sk_demo",
+        payload={"x": 1},
+    )
+    assert out["status"] == "ok"
+    assert out["delivery_ids"] == ["11111111-1111-1111-1111-111111111111"]
+
+
 async def test_emit_event_records_failure_status_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

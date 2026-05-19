@@ -68,12 +68,16 @@ async def emit_event(
     await init_pool()
 
     for sub in subs:
+        # asyncpg returns UUID columns as asyncpg.pgproto.UUID, not str.
+        # stringify before passing to stdlib uuid.UUID. See test fakes which
+        # already use the string form, and webhook_retry.py:77 for the same
+        # defensive cast.
         row = await fetch_one(
             "INSERT INTO agents.webhook_deliveries "
             "  (subscription_id, event_type, payload, attempt, last_attempt_at) "
             "VALUES ($1, $2, $3::jsonb, 1, NOW()) "
             "RETURNING delivery_id",
-            UUID(sub["subscription_id"]), event_type,
+            UUID(str(sub["subscription_id"])), event_type,
             json.dumps(full_payload),
         )
         assert row is not None
