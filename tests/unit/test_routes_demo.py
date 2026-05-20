@@ -121,3 +121,54 @@ def test_demo_agent_requires_no_auth(client: TestClient,
     monkeypatch.setattr("service.routes_demo.a2a.call_concierge", fake_call)
     resp = client.post("/demo/v1/agent", json={"message": "hi"})
     assert resp.status_code == 200
+
+
+def test_demo_open_dispute_routes_to_triage(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_aggregate(peer: str, user_message: str,
+                               partner_id: str) -> dict[str, Any]:
+        captured["peer"] = peer
+        captured["user_message"] = user_message
+        captured["partner_id"] = partner_id
+        return {
+            "narration": "Replayed. New price $5.95.",
+            "tool_calls": [
+                {"name": "fetch_recommendation_log"},
+                {"name": "replay_recommendation"},
+                {"name": "diff_pressures"},
+                {"name": "persist_dispute"},
+            ],
+            "event_count": 8,
+        }
+
+    monkeypatch.setattr("service.routes_demo.a2a.aggregate_peer_stream",
+                        fake_aggregate)
+
+    resp = client.post(
+        "/demo/v1/listings/L-abc/dispute",
+        json={"reason": "Customer thinks price is too high"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["listing_id"] == "L-abc"
+    assert "Replayed" in body["narration"]
+    assert {tc["name"] for tc in body["tool_calls"]} == {
+        "fetch_recommendation_log", "replay_recommendation",
+        "diff_pressures", "persist_dispute",
+    }
+    assert captured["peer"] == "dispute_triage"
+    assert captured["partner_id"] == "sk_demo_surplus_2026"
+    assert "L-abc" in captured["user_message"]
+    assert "too high" in captured["user_message"]
+
+
+def test_demo_open_dispute_requires_reason(client: TestClient) -> None:
+    resp = client.post(
+        "/demo/v1/listings/L-abc/dispute",
+        json={"reason": "   "},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"error": "reason is required"}

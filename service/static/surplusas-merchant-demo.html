@@ -675,6 +675,86 @@ body {
   padding: 10px 12px;
   border-radius: 8px;
 }
+
+.dispute-section {
+  padding: 16px 18px 18px;
+}
+.dispute-divider {
+  height: 1px;
+  background: var(--border);
+  margin-bottom: 14px;
+}
+.dispute-heading {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.dispute-hint {
+  font-size: 12.5px;
+  color: var(--text2);
+  line-height: 1.45;
+  margin-bottom: 12px;
+}
+.dispute-input {
+  margin-bottom: 10px;
+}
+.dispute-btn {
+  background: var(--amber);
+}
+.dispute-status {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text2);
+  min-height: 0;
+}
+.dispute-status.pending {
+  background: var(--bg);
+  color: var(--text2);
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+.dispute-status.error {
+  background: var(--danger-light);
+  color: var(--danger);
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+.dispute-result {
+  margin-top: 14px;
+}
+.dispute-result.visible {
+  background: var(--amber-light);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.dispute-result h5 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--amber);
+  margin-bottom: 6px;
+}
+.dispute-result .narration {
+  font-size: 13.5px;
+  color: var(--text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.dispute-result .tool-calls {
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--text3);
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  word-break: break-all;
+}
+.dispute-result .webhook-note {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--amber);
+  font-size: 11.5px;
+  color: var(--text2);
+}
 </style>
 </head>
 <body>
@@ -744,6 +824,18 @@ body {
         </button>
         <div class="publish-status" id="publishStatus"></div>
       </div>
+      <div class="dispute-section" id="disputeSection" style="display:none">
+        <div class="dispute-divider"></div>
+        <h4 class="dispute-heading">Later that day — dispute the price</h4>
+        <p class="dispute-hint">Tap to see Beat 2: the deterministic pricing engine replays with current anchors and shows you exactly which pressures changed.</p>
+        <textarea class="text-input dispute-input" id="disputeInput" rows="2" placeholder="e.g. Customer complained the price is too high for this neighborhood"></textarea>
+        <button class="publish-btn dispute-btn" id="disputeBtn">
+          <span class="btn-text">Open dispute</span>
+          <div class="spinner"></div>
+        </button>
+        <div class="dispute-status" id="disputeStatus"></div>
+        <div class="dispute-result" id="disputeResult"></div>
+      </div>
     </div>
   </div>
 
@@ -758,6 +850,7 @@ let currentMode = 'listing_create';
 let imageBase64 = null;
 let lastListingData = null;   // data from last listing_create response
 let lastListingImage = null;  // base64 captured at publish-time
+let lastPublishedListingId = null;  // returned by /demo/v1/listings/publish; used for dispute
 
 const API_URL = '';
 
@@ -857,8 +950,15 @@ $('#generateBtn').addEventListener('click', async () => {
   $('#publishSection').style.display = 'none';
   $('#publishStatus').textContent = '';
   $('#publishStatus').className = 'publish-status';
+  $('#disputeSection').style.display = 'none';
+  $('#disputeStatus').textContent = '';
+  $('#disputeStatus').className = 'dispute-status';
+  $('#disputeResult').classList.remove('visible');
+  $('#disputeResult').innerHTML = '';
+  $('#disputeInput').value = '';
   lastListingData = null;
   lastListingImage = null;
+  lastPublishedListingId = null;
 
   const body = {
     mode: currentMode,
@@ -948,6 +1048,9 @@ $('#publishBtn').addEventListener('click', async () => {
 
     if (res.ok && r.success) {
       setStatus('success', `Published! ID: ${r.published_listing_id}`);
+      lastPublishedListingId = r.published_listing_id;
+      const ds = $('#disputeSection');
+      if (ds) ds.style.display = 'block';
     } else {
       setStatus('error', `Publish failed: ${r.detail || r.message || 'Unknown error'}`);
     }
@@ -955,6 +1058,75 @@ $('#publishBtn').addEventListener('click', async () => {
     setStatus('error', `Publish error: ${err.message}`);
   } finally {
     finish();
+  }
+});
+
+// Beat 2 — open a dispute on the just-published listing
+$('#disputeBtn').addEventListener('click', async () => {
+  if (!lastPublishedListingId) return;
+  const reasonEl = $('#disputeInput');
+  const reason = (reasonEl.value || '').trim();
+  if (!reason) {
+    reasonEl.focus();
+    return;
+  }
+
+  const btn = $('#disputeBtn');
+  const statusEl = $('#disputeStatus');
+  const resultEl = $('#disputeResult');
+
+  const setStatus = (cls, text) => {
+    statusEl.className = 'dispute-status ' + cls;
+    statusEl.textContent = text;
+  };
+
+  btn.classList.add('loading');
+  btn.disabled = true;
+  resultEl.classList.remove('visible');
+  resultEl.innerHTML = '';
+  setStatus('pending', 'Replaying recommendation with current anchors...');
+
+  try {
+    const res = await fetch(
+      `${API_URL}/demo/v1/listings/${encodeURIComponent(lastPublishedListingId)}/dispute`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      },
+    );
+    const r = await res.json();
+    console.log('[SurplusAS] dispute response:', JSON.stringify(r, null, 2));
+
+    if (!res.ok || r.error) {
+      setStatus('error', `Dispute failed: ${r.error || r.detail || 'Unknown error'}`);
+      return;
+    }
+
+    setStatus('', '');
+    const tools = Array.isArray(r.tool_calls) ? r.tool_calls.map(t => t.name).filter(Boolean) : [];
+    const replayUsed = tools.includes('replay_recommendation');
+    const webhookFired = tools.includes('emit_price_update_webhook');
+
+    let html = '<h5>Dispute Triage</h5>';
+    html += `<div class="narration">${esc(r.narration || '(no narration)')}</div>`;
+    if (tools.length > 0) {
+      html += `<div class="tool-calls">tool path: ${tools.map(esc).join(' → ')}</div>`;
+    }
+    html += `<div class="webhook-note">${
+      webhookFired
+        ? '🔔 price.updated webhook fired (delta &gt; $0.25)'
+        : (replayUsed
+            ? 'Replay produced no material price change — no webhook'
+            : 'No replay tool called this turn')
+    }</div>`;
+    resultEl.innerHTML = html;
+    resultEl.classList.add('visible');
+  } catch (err) {
+    setStatus('error', `Dispute error: ${err.message}`);
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
   }
 });
 
@@ -1269,8 +1441,15 @@ $('#tryItBtn').addEventListener('click', async () => {
     $('#publishSection').style.display = 'none';
     $('#publishStatus').textContent = '';
     $('#publishStatus').className = 'publish-status';
+    $('#disputeSection').style.display = 'none';
+    $('#disputeStatus').textContent = '';
+    $('#disputeStatus').className = 'dispute-status';
+    $('#disputeResult').classList.remove('visible');
+    $('#disputeResult').innerHTML = '';
+    $('#disputeInput').value = '';
     lastListingData = null;
     lastListingImage = null;
+    lastPublishedListingId = null;
     $('#fileInput').value = '';
 
     const imgRes = await fetch(sample.image);

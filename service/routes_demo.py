@@ -68,3 +68,31 @@ async def demo_publish_listing(body: dict[str, Any]) -> dict[str, Any]:
         input=body,
         partner_id=DEMO_PARTNER_ID,
     )
+
+
+@router.post("/listings/{listing_id}/dispute")
+async def demo_open_dispute(
+    listing_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
+    """Demo shim: open a dispute on an existing listing.
+
+    Mirrors `/v1/listings/{listing_id}/dispute` but forces the demo
+    partner so the bundled static UI can drive Beat 2 without an API
+    key. Routes through Dispute Triage via aggregate_peer_stream so we
+    return the human-readable narration the demo UI renders.
+    """
+    reason = (body.get("reason") or "").strip()
+    if not reason:
+        return {"error": "reason is required"}
+    user_message = (
+        f"Dispute on listing_id={listing_id}: {reason}"
+    )
+    agg = await a2a.aggregate_peer_stream(
+        "dispute_triage", user_message, DEMO_PARTNER_ID,
+    )
+    return {
+        "listing_id": listing_id,
+        "narration": agg["narration"],
+        "tool_calls": agg["tool_calls"],
+        "event_count": agg["event_count"],
+    }
