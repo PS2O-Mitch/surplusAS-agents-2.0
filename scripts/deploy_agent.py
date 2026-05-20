@@ -194,7 +194,21 @@ def deploy(name: str, *, wrapper: str = "adk") -> str:
         # a2a-sdk pulls in starlette + uvicorn server bits that A2aAgent uses
         # to serve JSON-RPC. Keep adjacent to the wrapper switch so the deps
         # don't drift if the spike is rolled back.
-        requirements.append("a2a-sdk>=0.3.4")
+        #
+        # a2a-sdk version pin: vertexai 1.153.1's client imports a2a.types
+        # symbols (TaskIdParams, ClientConfig, ClientFactory) that were
+        # removed/renamed in a2a-sdk 1.0. Until vertexai updates, pin to the
+        # 0.x series that ships those types. Observed 2026-05-19 — a2a-sdk
+        # 1.0.3 fails `from a2a.types import TaskIdParams` in
+        # vertexai/agent_engines/_agent_engines.py.
+        #
+        # sse-starlette: a2a-sdk imports `from sse_starlette.sse import
+        # EventSourceResponse` in its jsonrpc_adapter but does NOT declare
+        # sse-starlette as a required dependency (upstream bug). Without this
+        # explicit pin, A2aAgent.set_up() crashes on the deployed engine.
+        # Observed 2026-05-19 on engine 4271913285944606720.
+        requirements.append("a2a-sdk>=0.3.4,<1.0")
+        requirements.append("sse-starlette>=2.0")
 
     # `extra_packages` are paths to local packages to vendor into the deployed
     # bundle. We need the whole repo so the deployed agent can resolve
