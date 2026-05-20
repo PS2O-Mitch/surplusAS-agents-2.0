@@ -8,7 +8,6 @@ on app startup.
 from __future__ import annotations
 
 import asyncio
-import logging
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -17,8 +16,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from shared.config import get_settings
-from shared.logging import init_logging
-from shared.tracing import init_tracing
+from shared.logging import get_logger, init_logging
+from shared.tracing import get_tracer, init_tracing
 from shared.webhook_retry import retry_failed_deliveries
 
 if TYPE_CHECKING:
@@ -26,7 +25,7 @@ if TYPE_CHECKING:
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-_log = logging.getLogger("surplusas.gateway.webhook_retry")
+_log = get_logger("surplusas.gateway.webhook_retry")
 
 
 async def _webhook_retry_loop() -> None:
@@ -41,12 +40,20 @@ async def _webhook_retry_loop() -> None:
     settings = get_settings()
     interval = settings.webhook_retry_interval_s
     limit = settings.webhook_retry_batch_limit
+    tracer = get_tracer("surplusas.webhook_retry")
 
     while True:
         try:
-            await retry_failed_deliveries(limit=limit)
+            with tracer.start_as_current_span(
+                "webhook.retry.sweep",
+                attributes={"webhook.retry.limit": limit},
+            ) as span:
+                summary = await retry_failed_deliveries(limit=limit)
+                for k, v in summary.items():
+                    span.set_attribute(f"webhook.retry.{k}", v)
+                _log.info("webhook_retry_sweep", **summary)
         except Exception as exc:  # noqa: BLE001 — log but never kill the loop
-            _log.warning("webhook retry sweep failed: %s", exc, exc_info=True)
+            _log.warning("webhook_retry_sweep_failed", error=str(exc), exc_info=True)
         await asyncio.sleep(interval)
 
 
