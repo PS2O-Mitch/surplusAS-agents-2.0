@@ -5,11 +5,11 @@
 
 locals {
   agents = {
-    concierge       = { display = "Concierge agent (root, gemini-2.5-pro)" }
-    pricing         = { display = "Pricing agent (gemini-2.5-flash)" }
-    onboarding      = { display = "Onboarding agent (gemini-2.5-flash)" }
-    listing_intake  = { display = "Listing Intake agent (gemini-2.5-flash)" }
-    dispute_triage  = { display = "Dispute Triage agent (gemini-2.5-pro)" }
+    concierge      = { display = "Concierge agent (root, gemini-2.5-pro)" }
+    pricing        = { display = "Pricing agent (gemini-2.5-flash)" }
+    onboarding     = { display = "Onboarding agent (gemini-2.5-flash)" }
+    listing_intake = { display = "Listing Intake agent (gemini-2.5-flash)" }
+    dispute_triage = { display = "Dispute Triage agent (gemini-2.5-pro)" }
   }
 }
 

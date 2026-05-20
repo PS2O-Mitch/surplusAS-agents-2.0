@@ -33,9 +33,9 @@ resource "google_secret_manager_secret_version" "github_submodule_pat_v1" {
 }
 
 # Grant the project's default Cloud Build runtime SA accessor on this secret.
-# Dedicated per-pipeline Cloud Build SAs aren't created in this repo's
-# Terraform yet (Cloud Build triggers are TODO — see README.md "What's NOT
-# here yet"). Tighten to a per-pipeline SA when those triggers land.
+# Triggers live in cloudbuild_triggers.tf (Phase 7 M5). They share the
+# default Cloud Build SA today; per-pipeline SAs are a future tightening
+# once the IAM cost is justified.
 resource "google_secret_manager_secret_iam_member" "cloudbuild_can_read_submodule_pat" {
   project   = var.project_id
   secret_id = google_secret_manager_secret.github_submodule_pat.id

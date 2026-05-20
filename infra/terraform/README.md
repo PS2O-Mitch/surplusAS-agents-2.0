@@ -16,7 +16,9 @@ arrive in later weeks as the runtime targets stabilise.
 | `iam.tf`                   | 6 service accounts (`gateway-sa`, 5 `<agent>-agent-sa`), shared role bindings, A2A impersonation chain.  |
 | `secret_manager.tf`        | `db-password-agents` and `webhook-signing-key` secrets + per-SA accessor grants.                         |
 | `cloudbuild_secrets.tf`    | `github-submodule-pat` secret for Cloud Build to fetch the private `vendor/surplusas-pricing` submodule. |
+| `cloudbuild_triggers.tf`   | Per-agent Cloud Build triggers with `included_files` path filters (Phase 7 M5). Skipped if `github_app_installation_id` is blank. |
 | `cloud_sql.tf`             | `surplusas_agents_app` user on the **existing** `surplusas-db` instance (does NOT create the instance).  |
+| `monitoring.tf`            | Log-based metric + alert policy for webhook deliveries that dead-letter (attempt=5, never delivered). Phase 7d. |
 | `outputs.tf`               | SA emails, secret ids, Cloud SQL connection name.                                                        |
 | `terraform.tfvars.example` | Template; copy to `terraform.tfvars` and fill in (not committed).                                        |
 
@@ -24,7 +26,6 @@ arrive in later weeks as the runtime targets stabilise.
 
 - `agent_engine.tf` — `google_vertex_ai_*` Agent Engine deployment resources. Adding when the Vertex AI provider surface stabilises (Week 2 verification).
 - `cloud_run.tf` — gateway service deployment. Week 3.
-- `cloud_build.tf` — six per-service triggers. Week 3.
 
 ## Bootstrap
 

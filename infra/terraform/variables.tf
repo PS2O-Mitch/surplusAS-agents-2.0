@@ -45,3 +45,14 @@ variable "github_submodule_pat" {
   description = "GitHub fine-grained PAT with read access to surplusAS-pricing-intel. Used by Cloud Build pipelines to fetch the vendor/surplusas-pricing submodule. Stored in Secret Manager; rotate via gcloud."
   sensitive   = true
 }
+
+variable "alert_notification_channel_id" {
+  type        = string
+  description = "Full resource id of a pre-existing Cloud Monitoring notification channel (email or PagerDuty). Used by the webhook dead-letter alert in monitoring.tf. Format: projects/<id>/notificationChannels/<id>. Create channels via Cloud Console (email channels need interactive verification)."
+}
+
+variable "github_app_installation_id" {
+  type        = string
+  description = "Cloud Build GitHub App installation id (numeric). Created out-of-band by installing the Cloud Build GitHub App on the surplusAS-agents-2.0 repo and copying the installation id from the Cloud Console (Cloud Build > Triggers > Connect Repository). Required by cloudbuild_triggers.tf."
+  default     = ""
+}

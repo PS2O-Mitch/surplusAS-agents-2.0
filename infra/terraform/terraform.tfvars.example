@@ -16,3 +16,15 @@ webhook_signing_key    = "REPLACE_ME"
 # Used by Cloud Build to fetch the vendor/surplusas-pricing submodule.
 # Mirror of the GitHub Actions SUBMODULE_TOKEN secret.
 github_submodule_pat = "REPLACE_ME"
+
+# Cloud Monitoring notification channel for the webhook dead-letter alert.
+# Create the channel via Console (Monitoring > Alerting > Notification
+# Channels) and paste the full resource id. Email channels require email
+# verification before the first apply will succeed.
+alert_notification_channel_id = "projects/ps2o-surplusas-api/notificationChannels/REPLACE_ME"
+
+# Cloud Build GitHub App installation id (numeric). Install the Cloud
+# Build GitHub App on the surplusAS-agents-2.0 repo via the Cloud
+# Console "Connect Repository" wizard and copy the installation id.
+# Leave blank to skip provisioning Cloud Build triggers.
+github_app_installation_id = ""
