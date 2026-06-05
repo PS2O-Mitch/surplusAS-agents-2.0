@@ -11,6 +11,7 @@ In tests the pool is initialised against a local Postgres via
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import asyncpg
@@ -20,6 +21,26 @@ from shared.config import get_settings
 
 _pool: asyncpg.Pool | None = None
 _lock = asyncio.Lock()
+
+
+async def _init_connection(conn: asyncpg.Connection) -> None:
+    """Per-connection setup: register JSON(B) codecs so JSONB columns
+    round-trip as Python objects.
+
+    Without this, asyncpg hands JSONB/JSON columns back as raw ``str`` on the
+    read side, so every read path (`fetch_recommendation_log`, the dispute and
+    listing REST GETs) would surface `applied_pressures` / `pressure_diff` /
+    `pricing_input` as JSON strings instead of dicts — silently breaking the
+    audit round-trip (CLAUDE.md guardrail #2). The write paths already cast via
+    ``$N::jsonb`` with ``json.dumps``; this is the read-side counterpart.
+    """
+    for typename in ("jsonb", "json"):
+        await conn.set_type_codec(
+            typename,
+            encoder=json.dumps,
+            decoder=json.loads,
+            schema="pg_catalog",
+        )
 
 
 async def _create_connection(*args: Any, **kwargs: Any) -> asyncpg.Connection:
@@ -53,6 +74,7 @@ async def init_pool() -> asyncpg.Pool:
         if _pool is None:
             _pool = await asyncpg.create_pool(
                 connect=_create_connection,
+                init=_init_connection,
                 min_size=1,
                 max_size=10,
             )
@@ -65,7 +87,9 @@ async def init_pool_from_dsn(dsn: str) -> asyncpg.Pool:
     global _pool
     async with _lock:
         if _pool is None:
-            _pool = await asyncpg.create_pool(dsn=dsn, min_size=1, max_size=4)
+            _pool = await asyncpg.create_pool(
+                dsn=dsn, init=_init_connection, min_size=1, max_size=4,
+            )
     assert _pool is not None
     return _pool
 

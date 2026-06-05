@@ -19,6 +19,16 @@ GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA agents
 ALTER DEFAULT PRIVILEGES IN SCHEMA agents
     GRANT SELECT, INSERT, UPDATE ON TABLES TO surplusas_agents_app;
 
+-- Append-only enforcement (CLAUDE.md guardrail #3): agents.recommendation_log
+-- is INSERT-only. Re-derivations write a NEW row with replay_of set; existing
+-- audit rows are NEVER mutated or removed. Enforce at the DB level so the app
+-- role physically cannot UPDATE/DELETE an audit row — defense-in-depth beyond
+-- the app-code convention. (The broad grant above hands the app role UPDATE on
+-- every agents.* table; this claws it back for the audit log only. disputes
+-- still needs UPDATE for the PATCH /v1/disputes resolution path, so the revoke
+-- is scoped to recommendation_log alone.)
+REVOKE UPDATE, DELETE ON agents.recommendation_log FROM surplusas_agents_app;
+
 -- Read-only on the cross-schema tables owned by surplusAS-API-2.0 / pricing-intel.
 -- IF NOT EXISTS guards aren't valid for GRANT; if these tables don't exist yet
 -- the grant will fail and you should skip until the owning repo has provisioned them.

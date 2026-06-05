@@ -15,14 +15,14 @@ The four Track 3 mandates and how this repo satisfies each:
 - **Vertex AI.** Every agent is a Vertex AI Agent Engine ReasoningEngine. Gemini 2.5 Pro for Concierge + Dispute Triage (reasoning); Gemini 2.5 Flash for Pricing, Onboarding, Listing Intake (lower-latency tool routing). No fine-tuning; base models + prompting + tools.
 - **A2A.** All five agents communicate via authenticated A2A (ID-token-per-audience, cached) with OpenTelemetry trace propagation across hops. The two lateral edges (Listing Intake → Pricing for live anchors; Dispute Triage → Pricing for replay) are by design — they preserve auditability across the dispute flow that Beat 2 demonstrates.
 
-Submission packet references the contest rules by filename: `Google for Startups AI Agents Challenge Rules FINAL.pdf`. New-projects-rule audit posture: this repo was created 2026-04-29 (signed git tag `v0.0.0-contest-start` at first commit, public history on GitHub); the vendored engine pre-dates the contest period and is treated as a backend dependency, not contest work product.
+Submission packet references the contest rules by filename: `Google for Startups AI Agents Challenge Rules FINAL.pdf`. New-projects-rule audit posture: this repo was created 2026-04-28 (signed git tag `v0.0.0-contest-start` at first commit, public history on GitHub); the vendored engine pre-dates the contest period and is treated as a backend dependency, not contest work product.
 
 ## §4. Three-repo ecosystem
 
 | Repo | Role | Contest status |
 |---|---|---|
 | [`surplusAS-pricing-intel`](https://github.com/PS2O-Mitch/surplusAS-pricing-intel) | Deterministic pricing engine + Tampa Bay reference corpus + nightly feedback loop | Pre-existing; consumed as `vendor/surplusas-pricing` submodule; will become a pip package post-contest |
-| [`SurplusAS-API-2.0`](https://github.com/PS2O-Mitch/SurplusAS-API-2.0) | Earlier monolith API; pattern source for A2A, auth, tracing, the static merchant-view UI | Pre-existing; not part of submission; no code imported |
+| [`SurplusAS-API-2.0`](https://github.com/PS2O-Mitch/SurplusAS-API-2.0) | Earlier monolith API; pattern source for A2A, auth, tracing, the static merchant-view UI | Pre-existing; not part of submission; no agent/gateway code imported (the static merchant-demo HTML was copied verbatim and adapted — disclosed) |
 | [`surplusAS-agents-2.0`](https://github.com/PS2O-Mitch/surplusAS-agents-2.0) | This repo — multi-agent gateway, contest submission, future production agent surface | **Net-new in the contest period** |
 
 Why three repos and not one: the pricing engine has its own release cadence and customer (SurplusAS internal data team), the agent service has a different one (SMB merchant integration), and the API-2.0 patterns are reference material we adapt — not import. Treating each as an independent unit keeps audit boundaries clean and lets the engine ship as a pip package without dragging the gateway with it.
@@ -43,7 +43,7 @@ This is why we refuse to let the LLM invent prices, why coefficients are read-on
 
 **Contest-only (judging-rubric-aligned):**
 - Public GitHub repo (✅ pushed 2026-05-18)
-- Three-minute demo video showing Beat 1 + Beat 2 end-to-end with Cloud Trace screenshots
+- One-to-two-minute demo video (per the contest's 1–2 min cap) showing Beat 1 + Beat 2 end-to-end with Cloud Trace screenshots
 - Architecture diagram (✅ `docs/architecture.md`)
 - All five golden eval suites ≥0.85 (✅ verified Phase 6 closeout)
 - New-projects-rule audit posture (✅ `v0.0.0-contest-start` tag + public commit history)

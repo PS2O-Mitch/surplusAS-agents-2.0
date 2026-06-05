@@ -9,7 +9,7 @@ SurplusAS multi-agent service. Hub-and-spoke topology on **Vertex AI Agent Engin
 - **Dispute Triage** (`gemini-2.5-pro`) — replays prior recommendations against fresh anchors; narrates pressure deltas.
 
 Customer surface: **REST + webhooks** (HMAC-SHA256 signed, at-least-once, 5 retries).
-Internal: **A2A** (Google ID-token-authenticated POST `/v1/agent`).
+Internal: agent-to-agent calls over Vertex AI Agent Engine's managed, ID-token-authenticated streaming channel (`async_stream_query` against the deployed reasoning engines).
 
 ---
 
