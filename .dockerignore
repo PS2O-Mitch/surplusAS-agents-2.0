@@ -1,0 +1,32 @@
+# Keep the build context small + the image clean. The Dockerfile COPYs only
+# agents/ shared/ service/ vendor/ pyproject.toml uv.lock README.md, but this
+# trims context-upload time and prevents accidental secret/cache inclusion.
+.git/
+.github/
+.venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Tests, evals, infra, docs — not needed in the runtime image.
+tests/
+evals/
+infra/
+docs/
+scripts/
+graphify-out/
+.claude/
+
+# Secrets / local env / logs / large docs.
+.env
+.env.*
+*.local
+deploy_*.log
+*.pdf
+
+# Submodule git metadata (keep the tracked source under vendor/).
+vendor/**/.git

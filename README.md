@@ -42,9 +42,28 @@ uv run pytest tests/unit
 uv run ruff check .
 uv run mypy agents shared service
 
-# Run golden evals (requires Vertex AI access)
-uv run python -m evals.runner --agent all --threshold 0.85
+# Run golden evals (requires Vertex AI access; run per agent)
+uv run python -m evals.runner --agent pricing --threshold 0.85
 ```
+
+## A2A surface (open protocol)
+
+Each agent is served over the open A2A protocol via ADK's `to_a2a()` adapter.
+
+```bash
+# Verify locally with the stock a2a-sdk client (no GCP creds needed):
+uv run python -m scripts.verify_a2a pricing
+#   -> discovers /.well-known/agent-card.json, exercises the JSON-RPC endpoint
+
+# Serve one agent's A2A surface locally:
+A2A_AGENT=pricing uv run uvicorn service.a2a_app:app --port 8080
+
+# Deploy it to Cloud Run (builds the Dockerfile via Cloud Build, wires the
+# agent SA + Cloud SQL + DB secret, advertises the live URL in the Agent Card):
+scripts/deploy_a2a_cloudrun.sh pricing          # or scripts/deploy_a2a_cloudrun.ps1
+```
+
+After deploy, the card is public at `https://<service-url>/.well-known/agent-card.json`.
 
 ## Architecture
 
