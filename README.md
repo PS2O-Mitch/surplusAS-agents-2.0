@@ -9,7 +9,10 @@ SurplusAS multi-agent service. Hub-and-spoke topology on **Vertex AI Agent Engin
 - **Dispute Triage** (`gemini-2.5-pro`) — replays prior recommendations against fresh anchors; narrates pressure deltas.
 
 Customer surface: **REST + webhooks** (HMAC-SHA256 signed, at-least-once, 5 retries).
-Internal: agent-to-agent calls over Vertex AI Agent Engine's managed, ID-token-authenticated streaming channel (`async_stream_query` against the deployed reasoning engines).
+
+**Open A2A surface (Track-3 interoperability mandate):** every agent is published over the **open Agent-to-Agent protocol** via ADK's native `to_a2a()` adapter (`service/a2a_app.py`) — a discoverable Agent Card at `/.well-known/agent-card.json` plus a JSON-RPC 2.0 endpoint, so any A2A-speaking enterprise agent (ADK, LangGraph, CrewAI, …) can discover and call it. Reproduce with `uv run python -m scripts.verify_a2a` (uses the stock `a2a-sdk` client; no GCP creds needed).
+
+Internal mesh: hub-and-spoke inter-agent calls run over Vertex AI Agent Engine's managed, ID-token-authenticated streaming channel (`async_stream_query` against the deployed reasoning engines, in `shared/a2a.py`).
 
 ---
 

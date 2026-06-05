@@ -118,19 +118,20 @@ def _load_agent_object(name: str) -> Any:
     return mod.agent
 
 
-def deploy(name: str, *, wrapper: str = "adk") -> str:
-    """Deploy the named agent. Returns the resulting resource name.
+def deploy(name: str) -> str:
+    """Deploy the named agent to Vertex AI Agent Engine. Returns the resource name.
 
-    `wrapper="adk"` (default) wraps the agent in `AdkApp` and exposes
-    `async_stream_query` over the legacy `reasoningEngines` RPC surface.
+    The agent is wrapped in `AdkApp` and exposes `async_stream_query` over the
+    Agent Engine RPC surface — the transport `shared/a2a.py` uses for the
+    internal hub-and-spoke mesh.
 
-    `wrapper="a2a"` wraps the agent in `A2aAgent` (Vertex's native A2A
-    template) so peers can talk JSON-RPC against it and discover its
-    Agent Card. Used by the Phase 7a A2A migration spike.
+    The *open* A2A surface (Agent Card + JSON-RPC, for discovery by external
+    enterprise agents — Track-3 mandate #4) is a SEPARATE deployment: the
+    ADK-native `to_a2a()` Starlette app in `service/a2a_app.py`, served on
+    Cloud Run. We do not use Vertex's managed `A2aAgent` wrapper — it is blocked
+    by an upstream `vertexai` ↔ `a2a-sdk` version skew (see OpenItems_B4.md /
+    commit f941dd6); ADK's `to_a2a()` is the framework-native path instead.
     """
-    if wrapper not in ("adk", "a2a"):
-        raise ValueError(f"unknown wrapper: {wrapper!r}; expected 'adk' or 'a2a'")
-
     manifest = _load_manifest(name)
     agent_obj = _load_agent_object(name)
 
@@ -190,25 +191,6 @@ def deploy(name: str, *, wrapper: str = "adk") -> str:
         "opentelemetry-sdk>=1.27.0",
         "opentelemetry-exporter-gcp-trace>=1.7.0",
     ]
-    if wrapper == "a2a":
-        # a2a-sdk pulls in starlette + uvicorn server bits that A2aAgent uses
-        # to serve JSON-RPC. Keep adjacent to the wrapper switch so the deps
-        # don't drift if the spike is rolled back.
-        #
-        # a2a-sdk version pin: vertexai 1.153.1's client imports a2a.types
-        # symbols (TaskIdParams, ClientConfig, ClientFactory) that were
-        # removed/renamed in a2a-sdk 1.0. Until vertexai updates, pin to the
-        # 0.x series that ships those types. Observed 2026-05-19 — a2a-sdk
-        # 1.0.3 fails `from a2a.types import TaskIdParams` in
-        # vertexai/agent_engines/_agent_engines.py.
-        #
-        # sse-starlette: a2a-sdk imports `from sse_starlette.sse import
-        # EventSourceResponse` in its jsonrpc_adapter but does NOT declare
-        # sse-starlette as a required dependency (upstream bug). Without this
-        # explicit pin, A2aAgent.set_up() crashes on the deployed engine.
-        # Observed 2026-05-19 on engine 4271913285944606720.
-        requirements.append("a2a-sdk>=0.3.4,<1.0")
-        requirements.append("sse-starlette>=2.0")
 
     # `extra_packages` are paths to local packages to vendor into the deployed
     # bundle. We need the whole repo so the deployed agent can resolve
@@ -227,30 +209,11 @@ def deploy(name: str, *, wrapper: str = "adk") -> str:
         "vendor/surplusas-pricing",
     ]
 
-    # Choose the wrapper. AdkApp is the legacy / default path; A2aAgent is the
-    # native A2A template that exposes JSON-RPC + Agent Card on the deployed
-    # engine (Phase 7a spike).
-    if wrapper == "adk":
-        # Wrap in AdkApp ourselves with an explicit app_name. Otherwise AdkApp's
-        # set_up() falls back to GOOGLE_CLOUD_AGENT_ENGINE_ID (a numeric resource
-        # id) which fails ADK's `App.name` validator (isidentifier() == False on
-        # purely-numeric strings) — Pydantic ValidationError at engine startup.
-        deployable: Any = AdkApp(agent=agent_obj, app_name=name, enable_tracing=True)
-    else:
-        from vertexai.agent_engines.templates.a2a import A2aAgent
-
-        from agents._a2a_bridge import build_adk_executor, build_default_card
-
-        card = build_default_card(
-            agent_name=name,
-            description=str(manifest.description or display_name),
-            # Vertex overrides the URL at deploy; placeholder is fine.
-            a2a_url=f"https://{location}-aiplatform.googleapis.com/v1/{name}",
-        )
-        deployable = A2aAgent(
-            agent_card=card,
-            agent_executor_builder=build_adk_executor(agent_obj),
-        )
+    # Wrap in AdkApp ourselves with an explicit app_name. Otherwise AdkApp's
+    # set_up() falls back to GOOGLE_CLOUD_AGENT_ENGINE_ID (a numeric resource
+    # id) which fails ADK's `App.name` validator (isidentifier() == False on
+    # purely-numeric strings) — Pydantic ValidationError at engine startup.
+    deployable: Any = AdkApp(agent=agent_obj, app_name=name, enable_tracing=True)
 
     # Build the env_vars dict the SDK forwards into the deployed container's
     # process environment. Plain values from manifest.env, SecretRef-backed
@@ -335,16 +298,10 @@ def deploy(name: str, *, wrapper: str = "adk") -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Deploy a SurplusAS agent to Agent Engine")
     parser.add_argument("--name", required=True, choices=VALID_AGENTS)
-    parser.add_argument(
-        "--wrapper",
-        choices=("adk", "a2a"),
-        default="adk",
-        help="Engine wrapper: 'adk' (default, legacy) or 'a2a' (native A2A).",
-    )
     args = parser.parse_args(argv)
 
     try:
-        deploy(args.name, wrapper=args.wrapper)
+        deploy(args.name)
     except Exception as exc:  # noqa: BLE001 — top-level CLI; surface anything cleanly
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

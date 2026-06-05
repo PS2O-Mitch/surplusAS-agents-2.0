@@ -1,6 +1,10 @@
 # Architecture — `surplusAS-agents-2.0`
 
-A hub-and-spoke multi-agent service on Vertex AI Agent Engine. The **Concierge** is the only externally-addressable agent; four specialists communicate with it via A2A. Customers see only REST + webhooks; A2A is internal-only.
+A hub-and-spoke multi-agent service on Vertex AI Agent Engine. The **Concierge** is the only agent on the customer REST path; four specialists coordinate with it across the internal mesh. Customers see REST + webhooks.
+
+Two A2A layers, by design (see [Customer integration model](#customer-integration-model)):
+- **Open A2A surface** — every agent is also published over the **open Agent-to-Agent protocol** (Agent Card at `/.well-known/agent-card.json` + JSON-RPC 2.0) via ADK's `to_a2a()` adapter, so external enterprise agents can discover and call it. This is the Track-3 interoperability surface.
+- **Internal mesh transport** — inter-agent calls within the deployed system run over Vertex Agent Engine's managed `async_stream_query` channel (ID-token-authenticated, trace-propagated).
 
 ## Agent topology
 
@@ -133,7 +137,8 @@ sequenceDiagram
 ## Customer integration model
 
 - **Customer-facing:** REST for synchronous ops, HMAC-SHA256 signed webhooks for async events (over the repo-wide `WEBHOOK_SIGNING_KEY`, NOT the per-subscription secret — that's reserved for future inbound verification).
-- **A2A:** internal only. All inter-agent calls go through [`shared/a2a.py`](../shared/a2a.py); ID tokens are minted per-audience and cached process-wide.
+- **A2A — open surface:** every agent is published over the open A2A protocol via ADK's `to_a2a()` adapter ([`service/a2a_app.py`](../service/a2a_app.py)) — a discoverable Agent Card at `/.well-known/agent-card.json` + a JSON-RPC 2.0 endpoint, framework-agnostic. Verify with `uv run python -m scripts.verify_a2a` (stock `a2a-sdk` client; no GCP creds). We use ADK's native adapter rather than Vertex's managed `A2aAgent` wrapper, which is blocked by an upstream `vertexai`↔`a2a-sdk` version skew (`OpenItems_B4.md`).
+- **A2A — internal mesh transport:** the hub-and-spoke inter-agent calls go through [`shared/a2a.py`](../shared/a2a.py) over Vertex Agent Engine's managed `async_stream_query` channel; ID tokens are minted per-audience and cached process-wide.
 - **Tracing:** OpenTelemetry spans across every A2A hop, exported to Cloud Trace; span names pinned in the [implementation plan](~/.claude/plans/the-ending-of-the-shimmering-reef.md) §8.
 - **Webhook retry:** sync-first-attempt with async sweep; `2^attempt`-second backoff (2, 4, 8, 16, 32s), dead-letter at attempt=5. Idempotency by `event_id`. See [`CLAUDE.md`](../CLAUDE.md) "Webhook semantics".
 
