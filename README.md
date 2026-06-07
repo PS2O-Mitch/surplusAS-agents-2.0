@@ -65,10 +65,18 @@ scripts/deploy_a2a_cloudrun.sh pricing          # or scripts/deploy_a2a_cloudrun
 
 After deploy, the card is public at `https://<service-url>/.well-known/agent-card.json`.
 
-**Live endpoint (Pricing agent):** https://surplusas-a2a-pricing-dcsgbetuga-uc.a.run.app
+**Live endpoints — all five agents are A2A-discoverable on Cloud Run** (public Agent Card, no auth):
+
+| Agent | Agent Card URL |
+|---|---|
+| Concierge | https://surplusas-a2a-concierge-dcsgbetuga-uc.a.run.app/.well-known/agent-card.json |
+| Pricing | https://surplusas-a2a-pricing-dcsgbetuga-uc.a.run.app/.well-known/agent-card.json |
+| Onboarding | https://surplusas-a2a-onboarding-dcsgbetuga-uc.a.run.app/.well-known/agent-card.json |
+| Listing Intake | https://surplusas-a2a-listing-intake-dcsgbetuga-uc.a.run.app/.well-known/agent-card.json |
+| Dispute Triage | https://surplusas-a2a-dispute-triage-dcsgbetuga-uc.a.run.app/.well-known/agent-card.json |
 
 ```bash
-# Discover the live agent over the open protocol (no auth required):
+# Discover any agent over the open protocol (no auth required):
 curl -s https://surplusas-a2a-pricing-dcsgbetuga-uc.a.run.app/.well-known/agent-card.json | python -m json.tool
 ```
 
