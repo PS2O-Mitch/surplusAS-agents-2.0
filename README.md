@@ -65,6 +65,13 @@ scripts/deploy_a2a_cloudrun.sh pricing          # or scripts/deploy_a2a_cloudrun
 
 After deploy, the card is public at `https://<service-url>/.well-known/agent-card.json`.
 
+**Live endpoint (Pricing agent):** https://surplusas-a2a-pricing-dcsgbetuga-uc.a.run.app
+
+```bash
+# Discover the live agent over the open protocol (no auth required):
+curl -s https://surplusas-a2a-pricing-dcsgbetuga-uc.a.run.app/.well-known/agent-card.json | python -m json.tool
+```
+
 ## Architecture
 
 See [`docs/architecture.md`](docs/architecture.md) for the agent topology (hub-and-spoke with two lateral A2A edges), the Beat 1 + Beat 2 sequence diagrams, and the hard guardrails on the data plane. The implementation plan lives at `~/.claude/plans/the-ending-of-the-shimmering-reef.md`.
