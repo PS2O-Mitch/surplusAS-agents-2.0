@@ -1,0 +1,49 @@
+flowchart TB
+    subgraph customer["Customer surface (public)"]
+        rest["REST<br/>POST /v1/concierge<br/>GET /v1/listings/{id}<br/>POST /v1/listings/{id}/dispute<br/>PATCH /v1/disputes/{id}<br/>POST /v1/webhooks/subscriptions"]
+        wh["Webhooks (outbound)<br/>merchant.profile.created<br/>listing.created<br/>price.updated (|Δ| &gt; $0.25)<br/>dispute.resolved"]
+    end
+
+    subgraph gateway["FastAPI gateway"]
+        app["service/app.py<br/>routes_rest · routes_disputes<br/>routes_webhooks · routes_demo<br/>_webhook_retry_loop (lifespan)"]
+    end
+
+    subgraph mesh["A2A internal mesh"]
+        concierge["Concierge<br/>gemini-2.5-pro<br/>(only externally-addressable)"]
+        pricing["Pricing<br/>gemini-2.5-flash<br/>deterministic, audit-bearing"]
+        onboarding["Onboarding<br/>gemini-2.5-flash"]
+        intake["Listing Intake<br/>gemini-2.5-flash"]
+        dispute["Dispute Triage<br/>gemini-2.5-pro"]
+    end
+
+    subgraph data["Cloud SQL"]
+        log[("agents.recommendation_log<br/>(append-only)")]
+        listings[("agents.listings")]
+        disputes[("agents.disputes")]
+        coeffs[("public.pricing_coefficients<br/>(read-only, owned by<br/>surplusAS-pricing-intel)")]
+        subs[("agents.webhook_subscriptions<br/>agents.webhook_deliveries")]
+    end
+
+    rest --> app
+    app -->|"A2A (ID-token, traced)"| concierge
+    concierge -->|"route_to_pricing"| pricing
+    concierge -->|"route_to_onboarding"| onboarding
+    concierge -->|"route_to_listing_intake"| intake
+    concierge -->|"route_to_dispute_triage"| dispute
+
+    intake -. "lateral A2A<br/>request_anchor_price" .-> pricing
+    dispute -. "lateral A2A<br/>replay_recommendation" .-> pricing
+
+    pricing -->|"engine_adapter.recommend<br/>INSERT only"| log
+    pricing -->|"SELECT"| coeffs
+    intake -->|"persist_listing"| listings
+    dispute -->|"persist_dispute"| disputes
+    app -->|"emit_event"| subs
+    subs --> wh
+
+    classDef customer fill:#e8f4f8,stroke:#0366d6
+    classDef agent fill:#fff4e6,stroke:#d97706
+    classDef store fill:#f0fdf4,stroke:#16a34a
+    class rest,wh customer
+    class concierge,pricing,onboarding,intake,dispute agent
+    class log,listings,disputes,coeffs,subs store

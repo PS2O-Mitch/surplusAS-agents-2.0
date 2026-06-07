@@ -1,0 +1,24 @@
+sequenceDiagram
+    autonumber
+    actor M as Merchant
+    participant UI as Static demo UI
+    participant GW as Gateway /v1/concierge
+    participant C as Concierge
+    participant I as Listing Intake
+    participant P as Pricing
+    participant DB as agents.*
+
+    M->>UI: paste sandwich draft
+    UI->>GW: POST /v1/concierge {input}
+    GW->>C: A2A call (mode=route)
+    C->>I: route_to_listing_intake (A2A)
+    I->>I: parse_draft → validate_listing
+    I->>P: request_anchor_price (lateral A2A)
+    P->>P: lookup_anchor + recommend (deterministic)
+    P->>DB: INSERT agents.recommendation_log
+    P-->>I: {price, applied_pressures, formula_version}
+    I->>DB: INSERT agents.listings (initial_recommendation_id)
+    I-->>C: ListingPersisted + narration
+    C-->>GW: ListingResponse
+    GW-->>UI: listing + price + audit pressures
+    GW->>DB: emit_event(listing.created) → POST customer webhook

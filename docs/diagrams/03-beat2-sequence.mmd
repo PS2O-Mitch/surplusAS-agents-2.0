@@ -1,0 +1,29 @@
+sequenceDiagram
+    autonumber
+    actor M as Merchant
+    participant UI as Demo UI
+    participant GW as Gateway
+    participant C as Concierge
+    participant D as Dispute Triage
+    participant P as Pricing
+    participant DB as agents.*
+
+    M->>UI: open dispute on listing
+    UI->>GW: POST /v1/listings/{id}/dispute {reason}
+    GW->>C: A2A call (mode=dispute)
+    C->>D: route_to_dispute_triage (A2A)
+    D->>DB: fetch_recommendation_log(listing_id)
+    D->>P: replay_recommendation(orig_id) (lateral A2A)
+    P->>P: re-resolve coefficients + anchor (FRESH)
+    P->>DB: INSERT recommendation_log (replay_of=orig)
+    P-->>D: new RecommendationLogEntry
+    D->>D: diff_pressures(orig, new)
+    D->>DB: INSERT agents.disputes (pending)
+    alt |new_price − old_price| > $0.25
+        D->>DB: emit_event(price.updated) → customer webhook
+    end
+    D-->>C: DisputeOpened + narration
+    C-->>GW: DisputeResponse
+    GW-->>UI: pressures diff + new price + status
+
+    Note over GW,DB: PATCH /v1/disputes/{id} (later):<br/>UPDATE status (accepted|rejected|withdrawn)<br/>then emit_event(dispute.resolved)
