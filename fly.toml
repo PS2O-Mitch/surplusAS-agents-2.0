@@ -1,0 +1,39 @@
+# Fly.io config for the SurplusAS gateway (single service, agents in-process).
+#
+# Deploy:
+#   fly launch --no-deploy          # first time only; claims the app name
+#   fly secrets set GOOGLE_API_KEY=... DATABASE_URL=... WEBHOOK_SIGNING_KEY=...
+#   fly deploy
+#
+# ponytail: one machine only — agent sessions are in-memory (see
+# shared/a2a.py). Bump min_machines_running only after swapping in a
+# DB-backed SessionService.
+
+app = "surplusas-agents"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  LOG_LEVEL = "INFO"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # The webhook retry loop must keep sweeping — never scale to zero.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
