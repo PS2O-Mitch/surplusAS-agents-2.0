@@ -1,88 +1,108 @@
-"""Agent-to-Agent (A2A) client backed by the Vertex AI Agent Engine SDK.
+"""Agent-to-Agent (A2A) client backed by in-process ADK Runners.
 
-Calling pattern (post-2026-04-30 SDK pivot):
+Post-GCP-migration transport: every peer agent runs IN-PROCESS. Each peer
+gets a lazily-built, cached `google.adk.runners.Runner` wrapping the same
+`agents.<peer>.agent` object the open A2A surface (`service/a2a_app.py`)
+serves. Calls stream events from `runner.run_async(...)` on the current
+event loop — no network hop, no ID tokens, no Agent Engine.
 
-    from vertexai import agent_engines
-    handle = agent_engines.get(resource_name)        # cached per peer
-    async for event in handle.async_stream_query(
-        message=<dict|str>, user_id=<partner_id>, session_id=<optional>,
+Calling pattern:
+
+    runner = Runner(app_name=peer, agent=load_agent(peer),
+                    session_service=InMemorySessionService(),
+                    auto_create_session=True)
+    async for event in runner.run_async(
+        user_id=<partner_id>, session_id=<uuid>, new_message=<types.Content>,
     ):
-        ...                                          # collect final event
+        ...                                          # aggregate / final event
 
-`async_stream_query` is the canonical async path on `AdkApp` in
-`google-cloud-aiplatform>=1.149`. `query`/`async_query` exist as mixin
-methods (`Queryable` / `AsyncQueryable`) but are NOT exposed on `AdkApp`,
-which is the framework all five SurplusAS agents deploy as. `stream_query`
-is deprecated. See SDK probe in commit history.
+The helpers aggregate the stream client-side because ADK doesn't surface a
+top-level structured envelope — tool calls and the model's final speech are
+split across separate parts in separate stream events.
 
-This helper aggregates the stream into a single final dict — most A2A
-calls are request/response (Concierge → Pricing for a recommendation,
-etc.). A streaming variant can be added later if Concierge wants to relay
-intermediate events to the gateway as SSE.
+Trace context: `a2a_client_span` from shared/tracing.py is kept for span
+continuity with the pre-migration dashboards; in-process calls parent
+naturally, so no traceparent header propagation is needed.
 
-Trace context: the existing `a2a_client_span` from shared/tracing.py is
-re-used for span correctness; the W3C `traceparent` is injected into the
-`run_config` map so the deployed agent can pick it up server-side once
-the ADK plumbing supports it (today the SDK does not surface a per-call
-header dict, so the trace continuity is best-effort cross-process).
+Sessions: ADK does NOT auto-create sessions by default; the runners here opt
+in via `auto_create_session=True` and callers passing `session_id=None` get a
+fresh uuid per call (matching the old per-call Vertex semantics).
 """
 
 from __future__ import annotations
 
 import asyncio
-import logging
-from typing import TYPE_CHECKING, Any, Literal
+import importlib
+import json
+import uuid
+from typing import Any, Literal
 
-from vertexai import agent_engines
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
 
-from shared.config import get_settings
 from shared.tracing import a2a_client_span, set_attrs
-
-if TYPE_CHECKING:
-    from vertexai.agent_engines import AgentEngine
-
-logger = logging.getLogger("surplusas.a2a")
 
 Peer = Literal["concierge", "pricing", "onboarding", "listing_intake", "dispute_triage"]
 
-_handle_cache: dict[str, AgentEngine] = {}
+# The full internal mesh — also the set service/a2a_app.py can publish
+# over the open A2A protocol.
+VALID_AGENTS: tuple[str, ...] = (
+    "concierge",
+    "pricing",
+    "onboarding",
+    "listing_intake",
+    "dispute_triage",
+)
+
+_runner_cache: dict[str, Runner] = {}
 _cache_lock = asyncio.Lock()
 
 
-def _resolve_resource(peer: Peer) -> str:
-    """Map a peer name to its Agent Engine resource name from settings."""
-    settings = get_settings()
-    resource = {
-        "concierge": settings.concierge_agent_resource,
-        "pricing": settings.pricing_agent_resource,
-        "onboarding": settings.onboarding_agent_resource,
-        "listing_intake": settings.listing_intake_agent_resource,
-        "dispute_triage": settings.dispute_triage_agent_resource,
-    }[peer]
-    if not resource:
-        raise RuntimeError(
-            f"A2A peer {peer!r} has no resource configured "
-            f"(set {peer.upper()}_AGENT_RESOURCE)."
+def load_agent(name: str) -> Any:
+    """Import `agents.<name>.agent` and return its `agent` object.
+
+    LAZY importlib on purpose: `agents/*/tools.py` import this module at
+    module import; a module-level `agents.*` import here would be a cycle.
+    """
+    if name not in VALID_AGENTS:
+        raise ValueError(
+            f"unknown agent {name!r}; expected one of {VALID_AGENTS}"
         )
-    return resource
+    mod = importlib.import_module(f"agents.{name}.agent")
+    if not hasattr(mod, "agent"):
+        raise AttributeError(
+            f"agents.{name}.agent has no `agent` attribute — "
+            f"expected a google.adk.Agent(...) instance."
+        )
+    return mod.agent
 
 
-async def _get_handle(peer: Peer) -> AgentEngine:
-    """Resolve and cache the AgentEngine handle for `peer`."""
-    resource = _resolve_resource(peer)
-    cached = _handle_cache.get(resource)
-    if cached is not None:
-        return cached
+def _build_runner(peer: Peer) -> Runner:
+    # ponytail: InMemorySessionService = single-machine ceiling; swap to a
+    # DB-backed SessionService when scaling past one Fly machine.
+    return Runner(
+        app_name=peer,
+        agent=load_agent(peer),
+        session_service=InMemorySessionService(),  # type: ignore[no-untyped-call]
+        auto_create_session=True,
+    )
+
+
+async def _get_runner(peer: Peer) -> Runner:
+    """Build and cache the in-process Runner for `peer`."""
+    runner = _runner_cache.get(peer)
+    if runner is not None:
+        return runner
 
     async with _cache_lock:
-        cached = _handle_cache.get(resource)
-        if cached is not None:
-            return cached
-        # agent_engines.get is synchronous metadata fetch; offload to thread
-        # pool to keep the event loop responsive on cold paths.
-        handle = await asyncio.to_thread(agent_engines.get, resource)
-        _handle_cache[resource] = handle
-        return handle
+        if peer not in _runner_cache:
+            _runner_cache[peer] = _build_runner(peer)
+        return _runner_cache[peer]
+
+
+def _user_content(text: str) -> types.Content:
+    return types.Content(role="user", parts=[types.Part(text=text)])
 
 
 async def call_peer_agent(
@@ -93,41 +113,34 @@ async def call_peer_agent(
     *,
     session_id: str | None = None,
 ) -> dict[str, Any]:
-    """Invoke a peer agent and return the final stream event.
+    """Invoke a peer agent and return the final stream event as a dict.
 
-    The `mode` + `input` are packed into a structured `message` dict so the
-    deployed agent's prompt + tools can dispatch on `mode`. (SurplusAS-API-2.0's
-    `AgentRequest.mode` discriminator pattern, preserved at the message level.)
+    The `mode` + `input` are packed into a structured envelope (JSON text
+    part) so the peer agent's prompt + tools can dispatch on `mode`.
+    (SurplusAS-API-2.0's `AgentRequest.mode` discriminator pattern,
+    preserved at the message level.)
 
-    `partner_id` becomes the SDK's `user_id` — required by `async_stream_query`
-    and our multi-tenant identity anchor.
+    `partner_id` becomes the Runner's `user_id` — our multi-tenant
+    identity anchor.
 
-    Returns the final event from the stream (typically the agent's terminal
-    response with tool outputs). Raises if the stream produced zero events.
+    Returns the final event, dumped JSON-safe (`exclude_none=True` so
+    absent parts don't surface as None-valued keys). Raises if the stream
+    produced zero events.
     """
-    handle = await _get_handle(peer)
-    message = {"mode": mode, "input": input}
-    run_config: dict[str, Any] = {}
+    runner = await _get_runner(peer)
+    message = _user_content(json.dumps({"mode": mode, "input": input}))
+    sid = session_id or uuid.uuid4().hex
 
-    final_event: dict[str, Any] | None = None
+    final_event: Any = None
     event_count = 0
 
-    headers: dict[str, str] = {}  # propagate fills it; mirrored into run_config
-    with a2a_client_span(peer, headers) as span:
-        run_config["traceparent"] = headers.get("traceparent")
-        run_config = {k: v for k, v in run_config.items() if v is not None}
+    with a2a_client_span(peer, {}) as span:
         set_attrs(span, **{"a2a.mode": mode, "a2a.partner_id": partner_id})
 
-        # `async_stream_query` is registered dynamically on the AgentEngine
-        # handle at runtime (it lives on AdkApp's `register_operations`); the
-        # static type from `agent_engines.get` is the bare `AgentEngine`,
-        # which doesn't surface this method. The runtime presence is part
-        # of the contract every SurplusAS agent deploys with.
-        async for event in handle.async_stream_query(  # type: ignore[attr-defined]
-            message=message,
+        async for event in runner.run_async(
             user_id=partner_id,
-            session_id=session_id,
-            run_config=run_config or None,
+            session_id=sid,
+            new_message=message,
         ):
             event_count += 1
             final_event = event
@@ -138,7 +151,8 @@ async def call_peer_agent(
         raise RuntimeError(
             f"A2A call to {peer!r} (mode={mode!r}) yielded zero events."
         )
-    return final_event
+    result: dict[str, Any] = final_event.model_dump(mode="json", exclude_none=True)
+    return result
 
 
 async def aggregate_peer_stream(
@@ -156,7 +170,7 @@ async def aggregate_peer_stream(
       - walks the full stream;
       - returns `{narration, tool_calls, event_count}` where `tool_calls` is
         the list of `function_call` parts each paired with their matching
-        `function_response.response` (None if the engine didn't emit one).
+        `function_response.response` (None if the agent didn't emit one).
 
     Used by:
       - `call_concierge` (gateway façade, derives `specialist_called`)
@@ -164,42 +178,39 @@ async def aggregate_peer_stream(
         narration up to the Concierge model)
       - `agents/listing_intake/tools.py:request_anchor_price` (relay Pricing's
         recommendation up to the Listing Intake model)
-
-    Aggregation has to live client-side because ADK doesn't surface a
-    top-level structured envelope — tool calls and the model's final
-    speech are split across separate parts in separate stream events.
+      - `agents/dispute_triage/tools.py:request_reprice` (replay lateral edge)
     """
-    handle = await _get_handle(peer)
+    runner = await _get_runner(peer)
+    sid = session_id or uuid.uuid4().hex
     last_text = ""
     tool_calls: list[dict[str, Any]] = []
     event_count = 0
 
-    headers: dict[str, str] = {}
-    with a2a_client_span(peer, headers) as span:
+    with a2a_client_span(peer, {}) as span:
         set_attrs(span, **{"a2a.mode": "user_message",
                            "a2a.partner_id": partner_id})
 
-        async for event in handle.async_stream_query(  # type: ignore[attr-defined]
-            message=user_message,
+        async for event in runner.run_async(
             user_id=partner_id,
-            session_id=session_id,
+            session_id=sid,
+            new_message=_user_content(user_message),
         ):
             event_count += 1
-            for part in (event.get("content", {}).get("parts") or []):
-                if part.get("text"):
-                    last_text = part["text"]
-                if "function_call" in part:
-                    fc = part.get("function_call") or {}
+            parts = event.content.parts if event.content and event.content.parts else []
+            for part in parts:
+                if part.text:
+                    last_text = part.text
+                if part.function_call is not None:
                     tool_calls.append({
-                        "name": fc.get("name"),
-                        "args": fc.get("args", {}),
+                        "name": part.function_call.name,
+                        "args": dict(part.function_call.args or {}),
                         "response": None,
                     })
-                if "function_response" in part:
-                    fr = part.get("function_response") or {}
+                if part.function_response is not None:
+                    fr = part.function_response
                     for tc in reversed(tool_calls):
-                        if tc["name"] == fr.get("name") and tc["response"] is None:
-                            tc["response"] = fr.get("response")
+                        if tc["name"] == fr.name and tc["response"] is None:
+                            tc["response"] = fr.response
                             break
 
         set_attrs(span, **{"a2a.event_count": event_count,

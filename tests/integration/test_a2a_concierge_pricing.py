@@ -1,31 +1,30 @@
-"""Integration test: Concierge → Pricing over A2A SDK.
+"""Integration test: Concierge → Pricing over the in-process A2A client.
 
-Both agents are mocked at the SDK boundary (`vertexai.agent_engines.get`),
-so this runs in CI without GCP credentials. What it verifies:
+The Pricing runner is mocked at the transport boundary
+(`shared.a2a._get_runner`), so this runs in CI without a Gemini key. What
+it verifies:
 
-1. The Concierge-side path packs `mode + input + partner_id` into the
-   message envelope `shared.a2a` builds.
-2. The Pricing-side stream-query receives the right `user_id`
-   (== partner_id) and message dict.
-3. The final stream event the deployed Pricing agent will produce shape-
-   matches what the Concierge's narration code expects: `applied_pressures`,
-   `formula_version`, `recommended_price` all present.
+1. The Concierge-side path packs `mode + input` into the JSON text-part
+   envelope `shared.a2a` builds, and forwards `partner_id` as `user_id`.
+2. `session_id=None` at the façade becomes a real per-call session id.
+3. The final stream event the Pricing agent produces round-trips through
+   `call_peer_agent` intact: `applied_pressures`, `formula_version`,
+   `recommended_price` all recoverable by the caller.
 
 This is marked `integration` so it stays out of the unit-test fast path.
-The real cross-deployment smoke check happens in `scripts/smoke_agents.sh`
-once both agents are deployed (Phase 2 step 9).
+The live-model smoke is `python -m evals.runner --agent pricing --mode remote`.
 """
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
-from unittest.mock import MagicMock
 
 import pytest
-from google.api_core import exceptions as gax_exceptions
+from google.adk.events import Event
+from google.genai import types
 
 from shared import a2a
-from shared.config import get_settings
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -33,31 +32,34 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.integration
 
 
-def _make_async_iter(events: list[dict[str, Any]]):
-    async def _gen() -> AsyncIterator[dict[str, Any]]:
-        for ev in events:
+def _ev(*parts: types.Part) -> Event:
+    return Event(author="pricing", content=types.Content(role="model", parts=list(parts)))
+
+
+class FakeRunner:
+    def __init__(self, events: list[Event], error: Exception | None = None) -> None:
+        self.events = events
+        self.error = error
+        self.captured: dict[str, Any] = {}
+
+    async def run_async(self, **kwargs: Any) -> AsyncIterator[Event]:
+        self.captured.update(kwargs)
+        if self.error is not None:
+            raise self.error
+        for ev in self.events:
             yield ev
 
-    return _gen()
 
+def _patch_runner(monkeypatch: pytest.MonkeyPatch, fake: FakeRunner) -> None:
+    async def _get(_peer: str) -> FakeRunner:
+        return fake
 
-@pytest.fixture(autouse=True)
-def _seed_pricing_resource(monkeypatch: pytest.MonkeyPatch) -> None:
-    get_settings.cache_clear()
-    monkeypatch.setenv(
-        "PRICING_AGENT_RESOURCE",
-        "projects/1/locations/us-central1/reasoningEngines/pricing-id",
-    )
-    yield
-    get_settings.cache_clear()
+    monkeypatch.setattr(a2a, "_get_runner", _get)
 
 
 async def test_concierge_to_pricing_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
     """Concierge dispatches `price_listing` to Pricing; Pricing returns a recommendation."""
-    captured: dict[str, Any] = {}
-
-    pricing_handle = MagicMock()
-    pricing_final_event = {
+    pricing_payload = {
         "status": "ok",
         "recommendation": {
             "recommendation_id": "11111111-1111-1111-1111-111111111111",
@@ -82,18 +84,14 @@ async def test_concierge_to_pricing_round_trip(monkeypatch: pytest.MonkeyPatch) 
         "narration": "Priced at $7.25 — anchor $11.50, expiry is the dominant pressure.",
     }
 
-    def _async_stream_query(**kwargs: Any) -> Any:
-        captured.update(kwargs)
-        return _make_async_iter(
-            [
-                {"partial": True, "text": "looking up anchor..."},
-                {"partial": True, "text": "running formula..."},
-                pricing_final_event,
-            ]
-        )
-
-    pricing_handle.async_stream_query = _async_stream_query
-    monkeypatch.setattr(a2a.agent_engines, "get", lambda resource: pricing_handle)
+    fake = FakeRunner([
+        _ev(types.Part(text="looking up anchor...")),
+        _ev(types.Part(text="running formula...")),
+        # The agent's final turn carries the structured payload as JSON text
+        # (the shape evals/runner.py:_extract_payload peels back out).
+        _ev(types.Part(text=json.dumps(pricing_payload))),
+    ])
+    _patch_runner(monkeypatch, fake)
 
     out = await a2a.call_peer_agent(
         peer="pricing",
@@ -111,7 +109,7 @@ async def test_concierge_to_pricing_round_trip(monkeypatch: pytest.MonkeyPatch) 
     )
 
     # Wire-shape assertions (what Concierge sends Pricing).
-    assert captured["message"] == {
+    assert json.loads(fake.captured["new_message"].parts[0].text) == {
         "mode": "price_listing",
         "input": {
             "category": "prepared_meal",
@@ -123,12 +121,14 @@ async def test_concierge_to_pricing_round_trip(monkeypatch: pytest.MonkeyPatch) 
             "merchant_floor_pct": 0.10,
         },
     }
-    assert captured["user_id"] == "sk_demo_surplus_2026"
-    assert captured["session_id"] is None
+    assert fake.captured["user_id"] == "sk_demo_surplus_2026"
+    assert isinstance(fake.captured["session_id"], str)
+    assert fake.captured["session_id"]
 
     # Final-event-shape assertions (what Concierge can rely on for narration).
-    assert out["status"] == "ok"
-    rec = out["recommendation"]
+    payload = json.loads(out["content"]["parts"][0]["text"])
+    assert payload["status"] == "ok"
+    rec = payload["recommendation"]
     assert rec["recommended_price"] == 7.25
     assert rec["formula_version"] == "v1"
     assert "applied_pressures" in rec
@@ -145,17 +145,14 @@ async def test_pricing_no_anchor_propagates_to_concierge(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When the Pricing engine has no anchor, the agent surfaces it cleanly."""
-    pricing_handle = MagicMock()
-    pricing_handle.async_stream_query = lambda **_: _make_async_iter(
-        [
-            {
-                "status": "no_anchor",
-                "narration": "No reference price for category=prepared_meal region=ZZ — "
-                             "listing parked as draft_no_price.",
-            }
-        ]
-    )
-    monkeypatch.setattr(a2a.agent_engines, "get", lambda resource: pricing_handle)
+    fake = FakeRunner([
+        _ev(types.Part(text=json.dumps({
+            "status": "no_anchor",
+            "narration": "No reference price for category=prepared_meal region=ZZ — "
+                         "listing parked as draft_no_price.",
+        }))),
+    ])
+    _patch_runner(monkeypatch, fake)
 
     out = await a2a.call_peer_agent(
         peer="pricing",
@@ -166,27 +163,19 @@ async def test_pricing_no_anchor_propagates_to_concierge(
         partner_id="sk_demo",
     )
 
-    assert out["status"] == "no_anchor"
-    assert "draft_no_price" in out["narration"]
+    payload = json.loads(out["content"]["parts"][0]["text"])
+    assert payload["status"] == "no_anchor"
+    assert "draft_no_price" in payload["narration"]
 
 
-async def test_pricing_permission_denied_surfaces_to_concierge(
+async def test_pricing_runner_error_surfaces_to_concierge(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Concierge must see a typed gax exception (so the gateway can map it)."""
-    pricing_handle = MagicMock()
+    """Concierge must see the raised exception (so the gateway can map it)."""
+    fake = FakeRunner([], error=PermissionError("pricing agent misconfigured"))
+    _patch_runner(monkeypatch, fake)
 
-    def _stream_raise(**_: Any) -> Any:
-        async def _gen():
-            raise gax_exceptions.PermissionDenied("pricing-agent-sa lacks aiplatform.user")
-            yield  # pragma: no cover  # makes mypy/ruff happy with async-gen shape
-
-        return _gen()
-
-    pricing_handle.async_stream_query = _stream_raise
-    monkeypatch.setattr(a2a.agent_engines, "get", lambda resource: pricing_handle)
-
-    with pytest.raises(gax_exceptions.PermissionDenied, match="aiplatform.user"):
+    with pytest.raises(PermissionError, match="misconfigured"):
         await a2a.call_peer_agent(
             peer="pricing",
             mode="price_listing",

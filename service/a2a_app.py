@@ -9,62 +9,34 @@ wrapped with ADK's native `to_a2a()` adapter, which exposes
 
 over plain HTTP. Any A2A-speaking enterprise agent — regardless of framework
 (ADK, LangGraph, CrewAI, …) — can read the card and call the agent. This is the
-*open* protocol, distinct from the proprietary Vertex Agent Engine
-`async_stream_query` transport that `shared/a2a.py` uses for the internal mesh.
+*open* protocol; the internal mesh in `shared/a2a.py` runs the same agent
+objects in-process via ADK Runners.
 
-Why `to_a2a()` and not the Vertex-managed `A2aAgent` wrapper: the managed
-client path is blocked by an upstream `vertexai` ↔ `a2a-sdk` version skew (see
-commit f941dd6 / OpenItems_B4.md). ADK's `to_a2a()` is the framework-native
-adapter; it depends only on `google-adk` + `a2a-sdk` (pinned to ADK's supported
-`>=0.3.4,<0.4.0` range) and runs as an ordinary Starlette ASGI app — locally or
-on Cloud Run — with no dependency on the managed Agent Engine client.
+ADK's `to_a2a()` is the framework-native adapter; it depends only on
+`google-adk` + `a2a-sdk` (pinned to ADK's supported `>=0.3.4,<0.4.0` range)
+and runs as an ordinary Starlette ASGI app on any container host.
 
 Run one agent's A2A surface locally:
 
     A2A_AGENT=pricing uv run uvicorn service.a2a_app:app --port 8080
 
 or build a specific app in code via `build_a2a_app("pricing", ...)`.
-On Cloud Run, set `A2A_AGENT`, and `A2A_PUBLIC_HOST`/`A2A_PUBLIC_PROTOCOL`/
+When hosting it, set `A2A_AGENT`, and `A2A_PUBLIC_HOST`/`A2A_PUBLIC_PROTOCOL`/
 `A2A_PUBLIC_PORT` to the service's public URL so the advertised card URL is
 reachable by external callers.
 """
 
 from __future__ import annotations
 
-import importlib
 import os
 from typing import TYPE_CHECKING
+
+from shared.a2a import VALID_AGENTS, load_agent
 
 if TYPE_CHECKING:
     from starlette.applications import Starlette
 
-# The full internal mesh — every agent can be published as an A2A server.
-VALID_AGENTS: tuple[str, ...] = (
-    "concierge",
-    "pricing",
-    "onboarding",
-    "listing_intake",
-    "dispute_triage",
-)
-
-
-def _load_agent(name: str) -> object:
-    """Import `agents.<name>.agent` and return its `agent` object.
-
-    Mirrors `scripts.deploy_agent._load_agent_object` but kept local so the
-    A2A surface has no dependency on the deploy CLI.
-    """
-    if name not in VALID_AGENTS:
-        raise ValueError(
-            f"unknown agent {name!r}; expected one of {VALID_AGENTS}"
-        )
-    mod = importlib.import_module(f"agents.{name}.agent")
-    if not hasattr(mod, "agent"):
-        raise AttributeError(
-            f"agents.{name}.agent has no `agent` attribute — "
-            f"expected a google.adk.Agent(...) instance."
-        )
-    return mod.agent
+__all__ = ["VALID_AGENTS", "build_a2a_app", "load_agent"]
 
 
 def build_a2a_app(
@@ -82,17 +54,17 @@ def build_a2a_app(
     """
     from google.adk.a2a.utils.agent_to_a2a import to_a2a
 
-    agent = _load_agent(name)
+    agent = load_agent(name)
     starlette_app: Starlette = to_a2a(agent, host=host, port=port, protocol=protocol)
     return starlette_app
 
 
 def _build_app_from_env() -> Starlette:
-    """Cloud Run / uvicorn entrypoint factory driven by environment.
+    """uvicorn entrypoint factory driven by environment.
 
     `A2A_AGENT` selects the agent (default: pricing). `A2A_PUBLIC_HOST`,
     `A2A_PUBLIC_PROTOCOL`, and `A2A_PUBLIC_PORT` set the externally-reachable
-    URL advertised in the card; on Cloud Run point these at the service URL.
+    URL advertised in the card; point these at the hosting service's URL.
     """
     name = os.environ.get("A2A_AGENT", "pricing")
     host = os.environ.get("A2A_PUBLIC_HOST", "0.0.0.0")  # noqa: S104

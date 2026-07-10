@@ -1,7 +1,8 @@
-"""Integration test: Dispute Triage -> Pricing over A2A SDK (lateral edge).
+"""Integration test: Dispute Triage -> Pricing (lateral edge, in-process).
 
-The Pricing handle is mocked at the SDK boundary (`vertexai.agent_engines.get`),
-so this runs in CI without GCP credentials. What it verifies:
+The Pricing runner is mocked at the transport boundary
+(`shared.a2a._get_runner`), so this runs in CI without a Gemini key. What
+it verifies:
 
 1. `request_reprice` sends a **plain-string** request to Pricing (the
    shape ADK Runner expects) — not the legacy `{mode, input}` envelope.
@@ -20,13 +21,13 @@ regression in the wire shape fails CI even before a remote eval is run.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
-from unittest.mock import MagicMock
 
 import pytest
+from google.adk.events import Event
+from google.genai import types
 
 from agents.dispute_triage.tools import request_reprice
 from shared import a2a
-from shared.config import get_settings
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -34,38 +35,39 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.integration
 
 
-def _make_async_iter(events: list[dict[str, Any]]):
-    async def _gen() -> AsyncIterator[dict[str, Any]]:
-        for ev in events:
+def _ev(*parts: types.Part) -> Event:
+    return Event(author="pricing", content=types.Content(role="model", parts=list(parts)))
+
+
+class FakeRunner:
+    def __init__(self, events: list[Event]) -> None:
+        self.events = events
+        self.captured: dict[str, Any] = {}
+
+    async def run_async(self, **kwargs: Any) -> AsyncIterator[Event]:
+        self.captured.update(kwargs)
+        for ev in self.events:
             yield ev
-    return _gen()
 
 
-@pytest.fixture(autouse=True)
-def _seed_pricing_resource(monkeypatch: pytest.MonkeyPatch) -> None:
-    get_settings.cache_clear()
-    monkeypatch.setenv(
-        "PRICING_AGENT_RESOURCE",
-        "projects/1/locations/us-central1/reasoningEngines/pricing-id",
-    )
-    yield
-    get_settings.cache_clear()
+def _patch_runner(monkeypatch: pytest.MonkeyPatch, fake: FakeRunner) -> None:
+    async def _get(_peer: str) -> FakeRunner:
+        return fake
+
+    monkeypatch.setattr(a2a, "_get_runner", _get)
 
 
 async def test_dispute_to_pricing_wire_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     """Pricing must receive a plain-string `replay_recommendation` request."""
-    captured: dict[str, Any] = {}
-
-    pricing_events = [
-        {"content": {"parts": [{"function_call": {
-            "name": "replay_recommendation",
-            "args": {"recommendation_id":
-                     "11111111-1111-1111-1111-111111111111",
-                     "partner_id": "sk_demo_surplus_2026"},
-        }}], "role": "model"}, "author": "pricing"},
-        {"content": {"parts": [{"function_response": {
-            "name": "replay_recommendation",
-            "response": {
+    fake = FakeRunner([
+        _ev(types.Part(function_call=types.FunctionCall(
+            name="replay_recommendation",
+            args={"recommendation_id": "11111111-1111-1111-1111-111111111111",
+                  "partner_id": "sk_demo_surplus_2026"},
+        ))),
+        _ev(types.Part(function_response=types.FunctionResponse(
+            name="replay_recommendation",
+            response={
                 "status": "ok",
                 "recommendation": {
                     "recommendation_id":
@@ -80,34 +82,24 @@ async def test_dispute_to_pricing_wire_shape(monkeypatch: pytest.MonkeyPatch) ->
                     "replay_of": "11111111-1111-1111-1111-111111111111",
                 },
             },
-        }}], "role": "user"}, "author": "pricing"},
-        {"content": {"parts": [{"text":
-            "Replayed under fresh coefficients: new price $6.50, "
-            "expiry pressure now 0.21."}],
-            "role": "model"}, "author": "pricing"},
-    ]
-
-    pricing_handle = MagicMock()
-
-    def _async_stream_query(**kwargs: Any) -> Any:
-        captured.update(kwargs)
-        return _make_async_iter(pricing_events)
-
-    pricing_handle.async_stream_query = _async_stream_query
-    monkeypatch.setattr(a2a.agent_engines, "get", lambda _r: pricing_handle)
+        ))),
+        _ev(types.Part(text="Replayed under fresh coefficients: new price $6.50, "
+                            "expiry pressure now 0.21.")),
+    ])
+    _patch_runner(monkeypatch, fake)
 
     out = await request_reprice(
         original_recommendation_id="11111111-1111-1111-1111-111111111111",
         partner_id="sk_demo_surplus_2026",
     )
 
-    # Pricing receives a STRING (not a dict envelope).
-    msg = captured["message"]
+    # Pricing receives a STRING message (not a dict envelope).
+    msg = fake.captured["new_message"].parts[0].text
     assert isinstance(msg, str)
     assert "replay_recommendation" in msg
     assert "11111111-1111-1111-1111-111111111111" in msg
     assert "sk_demo_surplus_2026" in msg
-    assert captured["user_id"] == "sk_demo_surplus_2026"
+    assert fake.captured["user_id"] == "sk_demo_surplus_2026"
 
     # Structured fields extracted from the function_response part:
     assert out["status"] == "ok"
@@ -123,13 +115,10 @@ async def test_dispute_reprice_error_when_pricing_skips_replay_tool(
 ) -> None:
     """If Pricing narrates without invoking `replay_recommendation`, we surface
     an error rather than fabricating a recommendation_id."""
-    pricing_handle = MagicMock()
-    pricing_handle.async_stream_query = lambda **_: _make_async_iter([
-        {"content": {"parts": [{"text":
-            "I couldn't find a prior recommendation matching that id."}],
-            "role": "model"}, "author": "pricing"},
+    fake = FakeRunner([
+        _ev(types.Part(text="I couldn't find a prior recommendation matching that id.")),
     ])
-    monkeypatch.setattr(a2a.agent_engines, "get", lambda _r: pricing_handle)
+    _patch_runner(monkeypatch, fake)
 
     out = await request_reprice(
         original_recommendation_id="11111111-1111-1111-1111-111111111111",
