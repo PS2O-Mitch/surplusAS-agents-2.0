@@ -37,6 +37,18 @@ def _ev(*parts: types.Part) -> Event:
     return Event(author="peer", content=types.Content(role="model", parts=list(parts)))
 
 
+class FakeSessionService:
+    """Records delete_session calls the way BaseSessionService receives them."""
+
+    def __init__(self) -> None:
+        self.deleted: list[tuple[str, str, str]] = []
+
+    async def delete_session(
+        self, *, app_name: str, user_id: str, session_id: str,
+    ) -> None:
+        self.deleted.append((app_name, user_id, session_id))
+
+
 class FakeRunner:
     """Stands in for a `google.adk.runners.Runner`.
 
@@ -48,6 +60,7 @@ class FakeRunner:
         self.events = events
         self.error = error
         self.captured: dict[str, Any] = {}
+        self.session_service = FakeSessionService()
 
     async def run_async(self, **kwargs: Any) -> AsyncIterator[Event]:
         self.captured.update(kwargs)
@@ -123,6 +136,40 @@ async def test_call_peer_agent_raises_on_empty_stream(monkeypatch):
             input={},
             partner_id="sk_demo",
         )
+
+
+async def test_ephemeral_session_is_deleted_after_call(monkeypatch):
+    """session_id=None mints a per-call session that must be cleaned up —
+    InMemorySessionService would otherwise grow for the life of the process."""
+    fake = FakeRunner([_ev(types.Part(text="ok"))])
+    _patch_runner(monkeypatch, fake)
+
+    await a2a.call_peer_agent("pricing", "price_listing", {}, "sk_demo")
+
+    sid = fake.captured["session_id"]
+    assert fake.session_service.deleted == [("pricing", "sk_demo", sid)]
+
+
+async def test_caller_supplied_session_is_kept(monkeypatch):
+    """An explicit session_id belongs to the caller — never delete it."""
+    fake = FakeRunner([_ev(types.Part(text="ok"))])
+    _patch_runner(monkeypatch, fake)
+
+    await a2a.aggregate_peer_stream(
+        "pricing", "hello", "sk_demo", session_id="keep-me",
+    )
+
+    assert fake.session_service.deleted == []
+
+
+async def test_ephemeral_session_deleted_even_when_stream_raises(monkeypatch):
+    fake = FakeRunner([], error=RuntimeError("model exploded"))
+    _patch_runner(monkeypatch, fake)
+
+    with pytest.raises(RuntimeError, match="model exploded"):
+        await a2a.call_peer_agent("pricing", "price_listing", {}, "sk_demo")
+
+    assert len(fake.session_service.deleted) == 1
 
 
 async def test_runner_is_cached_per_peer(monkeypatch):

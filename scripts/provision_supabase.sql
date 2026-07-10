@@ -42,20 +42,59 @@ CREATE TABLE IF NOT EXISTS public.partner_keys (
 GRANT USAGE ON SCHEMA agents TO surplusas_agents_app;
 GRANT USAGE ON SCHEMA public TO surplusas_agents_app;
 
-GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA agents
-    TO surplusas_agents_app;
+GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA agents TO surplusas_agents_app;
 
+-- Default privileges deliberately EXCLUDE UPDATE: a dropped-and-recreated
+-- agents.recommendation_log must come back INSERT-only (guardrail #3), not
+-- silently inherit UPDATE. Tables with a legitimate mutate path get UPDATE
+-- explicitly below — extend this list when a new mutable table lands.
 ALTER DEFAULT PRIVILEGES IN SCHEMA agents
-    GRANT SELECT, INSERT, UPDATE ON TABLES TO surplusas_agents_app;
+    GRANT SELECT, INSERT ON TABLES TO surplusas_agents_app;
+
+-- Mutable tables (verified against the code's UPDATE statements):
+--   merchant_profiles      — onboarding amendments
+--   disputes               — PATCH /v1/disputes resolution
+--   webhook_deliveries     — retry sweep bumps attempt/delivered_at
+--   webhook_subscriptions  — unsubscribe sets active=FALSE
+GRANT UPDATE ON agents.merchant_profiles,
+                agents.disputes,
+                agents.webhook_deliveries,
+                agents.webhook_subscriptions
+    TO surplusas_agents_app;
 
 -- Append-only enforcement (CLAUDE.md guardrail #3): agents.recommendation_log
 -- is INSERT-only. Re-derivations write a NEW row with replay_of set; existing
--- audit rows are NEVER mutated or removed. Enforced at the DB level so the app
--- role physically cannot UPDATE/DELETE an audit row. (disputes still needs
--- UPDATE for the PATCH /v1/disputes resolution path, so the revoke is scoped
--- to recommendation_log alone.)
+-- audit rows are NEVER mutated or removed. The narrowed grants above never
+-- hand out UPDATE/DELETE on it; the REVOKE is belt-and-braces for databases
+-- provisioned under the older broad grant.
 REVOKE UPDATE, DELETE ON agents.recommendation_log FROM surplusas_agents_app;
 
 GRANT SELECT ON public.partner_keys           TO surplusas_agents_app;
 GRANT SELECT ON public.pricing_coefficients   TO surplusas_agents_app;
 GRANT SELECT ON public.reference_prices       TO surplusas_agents_app;
+
+-- ── Section C: lock the public schema out of Supabase's Data API ───────
+-- Supabase exposes the `public` schema over PostgREST and grants new
+-- tables to the `anon`/`authenticated` roles by default. partner_keys is
+-- the bearer-credential store — anon read = full gateway auth bypass; and
+-- writable reference tables would let anyone poison pricing anchors.
+ALTER TABLE public.partner_keys         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pricing_coefficients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reference_prices     ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON public.partner_keys, public.pricing_coefficients, public.reference_prices
+    FROM anon, authenticated;
+
+-- RLS applies to surplusas_agents_app too (it has no BYPASSRLS), so give it
+-- explicit all-rows read policies. anon/authenticated get no policies →
+-- denied even if a future default grant reappears. The postgres owner
+-- (provisioning + seed scripts) bypasses RLS on its own tables.
+DROP POLICY IF EXISTS app_read ON public.partner_keys;
+CREATE POLICY app_read ON public.partner_keys
+    FOR SELECT TO surplusas_agents_app USING (true);
+DROP POLICY IF EXISTS app_read ON public.pricing_coefficients;
+CREATE POLICY app_read ON public.pricing_coefficients
+    FOR SELECT TO surplusas_agents_app USING (true);
+DROP POLICY IF EXISTS app_read ON public.reference_prices;
+CREATE POLICY app_read ON public.reference_prices
+    FOR SELECT TO surplusas_agents_app USING (true);

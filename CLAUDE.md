@@ -50,7 +50,7 @@ uv run pytest tests/integration -m integration   # mocked-runner integration tes
 uv run pytest tests/unit/test_smoke.py::test_name -v   # single test
 uv run ruff check .                       # lint (config: ruff.toml)
 uv run mypy agents shared service         # type check (strict; vendor/ excluded)
-uv run python -m evals.runner --agent all --threshold 0.85            # golden evals, local (pure Python)
+uv run python -m evals.runner --agent pricing --threshold 0.85        # golden evals, local (pure Python; one agent per run)
 uv run python -m evals.runner --agent pricing --mode remote           # live-model smoke (needs GOOGLE_API_KEY + DB)
 DATABASE_URL=... uv run python scripts/apply_schema.py    # apply shared/db_schema.sql
 DATABASE_URL=... uv run python scripts/seed_demo_merchant.py   # reset + seed demo data
@@ -108,7 +108,9 @@ Pytest markers (`pytest.ini`): `integration`, `e2e` (declared; e2e-tagged flows 
 - **`GOOGLE_API_KEY` is mirrored into `os.environ` by `get_settings()`** (`shared/config.py`) because google-genai reads the process env, not pydantic's `.env`. Don't construct `genai.Client(...)` at module import time — the first model call happens after settings are loaded.
 - **`google-cloud-aiplatform` remains installed transitively** (hard dep of `google-adk` 2.0.0b1) even though nothing here imports it. Never import it; the runtime has no GCP dependency.
 - **CI clones the submodule via a scoped PAT** (`.github/workflows/ci.yml` — `SUBMODULE_TOKEN` secret + explicit `git submodule update --init`). `fly deploy` builds from the local context, so the locally-initialized submodule ships; CI-driven deploys need the PAT checkout first.
-- **Supabase DSN:** session-mode pooler (port 5432 on the pooler host) or direct connection only. Transaction mode (port 6543) breaks asyncpg prepared statements.
+- **Supabase DSN:** session-mode pooler (port 5432 on the pooler host, username `<role>.<project-ref>`) — transaction mode (port 6543) breaks asyncpg prepared statements, and the direct host is IPv6-only on most plans.
+- **`DEMO_MODE` gates the unauthenticated surface.** The `/demo/v1/*` shim + static UI force the demo partner and skip auth (they were IAP-gated on Cloud Run); `service/app.py` mounts them only when `DEMO_MODE=true`. Never set it on the public Fly app.
+- **No dead-letter alerting yet.** The GCP log-metric alert died with the Terraform; webhook dead-letters (attempt=5) are only visible via the triage SQL above. Wire an alert (Fly log ship → alerting, or a cron over `webhook_deliveries`) before real customers depend on webhooks.
 
 ## Don't
 

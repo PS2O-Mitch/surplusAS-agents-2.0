@@ -1,9 +1,8 @@
 """Reset the agents tables and seed the reference data for a working demo.
 
 Wipes the agent-owned tables so a demo run starts from a known empty
-state, then idempotently seeds everything a fresh Postgres needs:
+state, then idempotently seeds the reference data a fresh Postgres needs:
 
-  public.partner_keys        — the demo key `sk_demo_surplus_2026`
   public.pricing_coefficients — 9 categories × region US, version 1
                                 (via vendor jobs/seed_coefficients._insert_seeds)
   public.reference_prices    — one anchor row per category at region US,
@@ -11,12 +10,18 @@ state, then idempotently seeds everything a fresh Postgres needs:
                                 SOURCE_PREFERENCE (apify for prepared
                                 categories, off for grocery)
 
+Partner keys are credentials, so they are only inserted when YOU supply
+one: set DEMO_API_KEY to the key you want seeded (partner_id demo_001).
+The repo-committed literal `sk_demo_surplus_2026` is for LOCAL demo use —
+never seed it into an internet-reachable deployment.
+
 What's wiped:
   agents.webhook_deliveries, agents.webhook_subscriptions,
   agents.disputes, agents.listings, agents.recommendation_log
 
 Run with the OWNER dsn (Supabase `postgres` role):
-  DATABASE_URL='postgresql://postgres:...' uv run python scripts/seed_demo_merchant.py
+  DATABASE_URL='postgresql://postgres:...' [DEMO_API_KEY=...] \
+      uv run python scripts/seed_demo_merchant.py
 """
 
 from __future__ import annotations
@@ -29,7 +34,6 @@ import asyncpg
 
 import shared.pricing_intel  # noqa: F401 — puts vendor/surplusas-pricing on sys.path
 
-DEMO_PARTNER = "sk_demo_surplus_2026"
 DEMO_PARTNER_ID = "demo_001"
 
 TRUNCATE_ORDER = (
@@ -72,17 +76,24 @@ async def _seed() -> None:
 
         print()
         print("--- Partner key ---")
-        await conn.execute(
-            "INSERT INTO public.partner_keys (api_key, partner_id, context_json, active) "
-            "VALUES ($1, $2, '{}'::jsonb, TRUE) ON CONFLICT DO NOTHING",
-            DEMO_PARTNER, DEMO_PARTNER_ID,
-        )
-        row = await conn.fetchrow(
-            "SELECT api_key, partner_id, active FROM public.partner_keys WHERE api_key = $1",
-            DEMO_PARTNER,
-        )
-        assert row is not None
-        print(f"  ok: api_key={row['api_key']} partner_id={row['partner_id']}")
+        demo_key = os.environ.get("DEMO_API_KEY", "")
+        if demo_key:
+            await conn.execute(
+                "INSERT INTO public.partner_keys (api_key, partner_id, context_json, active) "
+                "VALUES ($1, $2, '{}'::jsonb, TRUE) ON CONFLICT DO NOTHING",
+                demo_key, DEMO_PARTNER_ID,
+            )
+            print(f"  ok: seeded partner_id={DEMO_PARTNER_ID} (key from DEMO_API_KEY)")
+        else:
+            count = await conn.fetchval(
+                "SELECT COUNT(*) FROM public.partner_keys WHERE partner_id = $1",
+                DEMO_PARTNER_ID,
+            )
+            print(f"  skipped (DEMO_API_KEY not set); {count} existing {DEMO_PARTNER_ID} key(s)")
+            if not count:
+                print("  Insert one with: DEMO_API_KEY=<key> ... or SQL:")
+                print("    INSERT INTO public.partner_keys (api_key, partner_id) "
+                      "VALUES ('<key>', 'demo_001');")
 
         print()
         print("--- Pricing coefficients (vendor seed, idempotent) ---")

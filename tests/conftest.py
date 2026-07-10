@@ -9,9 +9,15 @@ test hit `shared.a2a` in the same session.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from shared import a2a
+
+# The demo shim is opt-in (settings.demo_mode, off in prod); the demo-route
+# and e2e suites exercise it. Set before any test module builds the app.
+os.environ.setdefault("DEMO_MODE", "true")
 
 
 @pytest.fixture(autouse=True)

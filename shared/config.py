@@ -26,9 +26,13 @@ class Settings(BaseSettings):
 
     # --- Gemini ----------------------------------------------------------
     # Default path: Gemini Developer API via GOOGLE_API_KEY. The Vertex
-    # escape hatch stays for anyone re-pointing at a GCP project.
+    # escape hatch stays for anyone re-pointing at a GCP project: set the
+    # flag plus google_cloud_project/location and all three are mirrored
+    # into os.environ for google-genai.
     google_genai_use_vertexai: bool = False
     google_api_key: str = ""
+    google_cloud_project: str = ""
+    google_cloud_location: str = ""
 
     concierge_model: str = "gemini-2.5-pro"
     dispute_triage_model: str = "gemini-2.5-pro"
@@ -50,6 +54,9 @@ class Settings(BaseSettings):
     # --- Service --------------------------------------------------------
     log_level: str = "INFO"
     port: int = Field(default=8080, ge=1, le=65535)
+    # Mounts the unauthenticated /demo/v1 shim + static demo UI. Keep OFF
+    # in production — the shim forces the demo partner and skips auth.
+    demo_mode: bool = False
 
 
 @lru_cache(maxsize=1)
@@ -60,6 +67,10 @@ def get_settings() -> Settings:
     settings = Settings()
     if settings.google_genai_use_vertexai:
         os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "true")
+        if settings.google_cloud_project:
+            os.environ.setdefault("GOOGLE_CLOUD_PROJECT", settings.google_cloud_project)
+        if settings.google_cloud_location:
+            os.environ.setdefault("GOOGLE_CLOUD_LOCATION", settings.google_cloud_location)
     elif settings.google_api_key:
         os.environ.setdefault("GOOGLE_API_KEY", settings.google_api_key)
     return settings

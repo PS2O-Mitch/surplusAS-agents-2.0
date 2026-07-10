@@ -32,10 +32,11 @@ fresh uuid per call (matching the old per-call Vertex semantics).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib
 import json
 import uuid
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -47,13 +48,7 @@ Peer = Literal["concierge", "pricing", "onboarding", "listing_intake", "dispute_
 
 # The full internal mesh — also the set service/a2a_app.py can publish
 # over the open A2A protocol.
-VALID_AGENTS: tuple[str, ...] = (
-    "concierge",
-    "pricing",
-    "onboarding",
-    "listing_intake",
-    "dispute_triage",
-)
+VALID_AGENTS: tuple[str, ...] = get_args(Peer)
 
 _runner_cache: dict[str, Runner] = {}
 _cache_lock = asyncio.Lock()
@@ -97,12 +92,28 @@ async def _get_runner(peer: Peer) -> Runner:
 
     async with _cache_lock:
         if peer not in _runner_cache:
-            _runner_cache[peer] = _build_runner(peer)
+            # Agent-module import + Runner construction is slow on cold
+            # paths; offload so the event loop stays responsive.
+            _runner_cache[peer] = await asyncio.to_thread(_build_runner, peer)
         return _runner_cache[peer]
 
 
 def _user_content(text: str) -> types.Content:
     return types.Content(role="user", parts=[types.Part(text=text)])
+
+
+async def _drop_ephemeral_session(
+    runner: Runner, peer: Peer, partner_id: str, sid: str,
+) -> None:
+    """Delete a per-call session so InMemorySessionService doesn't grow forever.
+
+    Only called for sessions this module minted itself (caller passed
+    session_id=None). Cleanup must never mask the real call outcome.
+    """
+    with contextlib.suppress(Exception):
+        await runner.session_service.delete_session(
+            app_name=peer, user_id=partner_id, session_id=sid,
+        )
 
 
 async def call_peer_agent(
@@ -137,13 +148,17 @@ async def call_peer_agent(
     with a2a_client_span(peer, {}) as span:
         set_attrs(span, **{"a2a.mode": mode, "a2a.partner_id": partner_id})
 
-        async for event in runner.run_async(
-            user_id=partner_id,
-            session_id=sid,
-            new_message=message,
-        ):
-            event_count += 1
-            final_event = event
+        try:
+            async for event in runner.run_async(
+                user_id=partner_id,
+                session_id=sid,
+                new_message=message,
+            ):
+                event_count += 1
+                final_event = event
+        finally:
+            if session_id is None:
+                await _drop_ephemeral_session(runner, peer, partner_id, sid)
 
         set_attrs(span, **{"a2a.event_count": event_count})
 
@@ -190,28 +205,32 @@ async def aggregate_peer_stream(
         set_attrs(span, **{"a2a.mode": "user_message",
                            "a2a.partner_id": partner_id})
 
-        async for event in runner.run_async(
-            user_id=partner_id,
-            session_id=sid,
-            new_message=_user_content(user_message),
-        ):
-            event_count += 1
-            parts = event.content.parts if event.content and event.content.parts else []
-            for part in parts:
-                if part.text:
-                    last_text = part.text
-                if part.function_call is not None:
-                    tool_calls.append({
-                        "name": part.function_call.name,
-                        "args": dict(part.function_call.args or {}),
-                        "response": None,
-                    })
-                if part.function_response is not None:
-                    fr = part.function_response
-                    for tc in reversed(tool_calls):
-                        if tc["name"] == fr.name and tc["response"] is None:
-                            tc["response"] = fr.response
-                            break
+        try:
+            async for event in runner.run_async(
+                user_id=partner_id,
+                session_id=sid,
+                new_message=_user_content(user_message),
+            ):
+                event_count += 1
+                parts = event.content.parts if event.content and event.content.parts else []
+                for part in parts:
+                    if part.text:
+                        last_text = part.text
+                    if part.function_call is not None:
+                        tool_calls.append({
+                            "name": part.function_call.name,
+                            "args": dict(part.function_call.args or {}),
+                            "response": None,
+                        })
+                    if part.function_response is not None:
+                        fr = part.function_response
+                        for tc in reversed(tool_calls):
+                            if tc["name"] == fr.name and tc["response"] is None:
+                                tc["response"] = fr.response
+                                break
+        finally:
+            if session_id is None:
+                await _drop_ephemeral_session(runner, peer, partner_id, sid)
 
         set_attrs(span, **{"a2a.event_count": event_count,
                            "a2a.tool_call_count": len(tool_calls)})
