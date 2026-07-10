@@ -1,10 +1,10 @@
 # Architecture — `surplusAS-agents-2.0`
 
-A hub-and-spoke multi-agent service on Vertex AI Agent Engine. The **Concierge** is the only agent on the customer REST path; four specialists coordinate with it across the internal mesh. Customers see REST + webhooks.
+A hub-and-spoke multi-agent service: one FastAPI gateway on Fly.io with all five ADK agents running **in-process**. The **Concierge** is the only agent on the customer REST path; four specialists coordinate with it across the internal mesh. Customers see REST + webhooks.
 
 Two A2A layers, by design (see [Customer integration model](#customer-integration-model)):
-- **Open A2A surface** — every agent is also published over the **open Agent-to-Agent protocol** (Agent Card at `/.well-known/agent-card.json` + JSON-RPC 2.0) via ADK's `to_a2a()` adapter, so external enterprise agents can discover and call it. This is the Track-3 interoperability surface.
-- **Internal mesh transport** — inter-agent calls within the deployed system run over Vertex Agent Engine's managed `async_stream_query` channel (ID-token-authenticated, trace-propagated).
+- **Open A2A surface** — every agent can also be published over the **open Agent-to-Agent protocol** (Agent Card at `/.well-known/agent-card.json` + JSON-RPC 2.0) via ADK's `to_a2a()` adapter, so external enterprise agents can discover and call it.
+- **Internal mesh transport** — inter-agent calls run as in-process ADK `Runner` streams (`shared/a2a.py`): no network hop, spans parent naturally.
 
 ## Agent topology
 
@@ -27,7 +27,7 @@ flowchart TB
         dispute["Dispute Triage<br/>gemini-2.5-pro"]
     end
 
-    subgraph data["Cloud SQL"]
+    subgraph data["Postgres (Supabase)"]
         log[("agents.recommendation_log<br/>(append-only)")]
         listings[("agents.listings")]
         disputes[("agents.disputes")]
@@ -36,7 +36,7 @@ flowchart TB
     end
 
     rest --> app
-    app -->|"A2A (ID-token, traced)"| concierge
+    app -->|"in-process Runner (traced)"| concierge
     concierge -->|"route_to_pricing"| pricing
     concierge -->|"route_to_onboarding"| onboarding
     concierge -->|"route_to_listing_intake"| intake
@@ -137,11 +137,13 @@ sequenceDiagram
 ## Customer integration model
 
 - **Customer-facing:** REST for synchronous ops, HMAC-SHA256 signed webhooks for async events (over the repo-wide `WEBHOOK_SIGNING_KEY`, NOT the per-subscription secret — that's reserved for future inbound verification).
-- **A2A — open surface:** every agent is published over the open A2A protocol via ADK's `to_a2a()` adapter ([`service/a2a_app.py`](../service/a2a_app.py)) — a discoverable Agent Card at `/.well-known/agent-card.json` + a JSON-RPC 2.0 endpoint, framework-agnostic. Verify with `uv run python -m scripts.verify_a2a` (stock `a2a-sdk` client; no GCP creds). We use ADK's native adapter rather than Vertex's managed `A2aAgent` wrapper, which is blocked by an upstream `vertexai`↔`a2a-sdk` version skew (`OpenItems_B4.md`).
-- **A2A — internal mesh transport:** the hub-and-spoke inter-agent calls go through [`shared/a2a.py`](../shared/a2a.py) over Vertex Agent Engine's managed `async_stream_query` channel; ID tokens are minted per-audience and cached process-wide.
-- **Tracing:** OpenTelemetry spans across every A2A hop, exported to Cloud Trace; span names pinned in the [implementation plan](~/.claude/plans/the-ending-of-the-shimmering-reef.md) §8.
+- **A2A — open surface:** every agent can be published over the open A2A protocol via ADK's `to_a2a()` adapter ([`service/a2a_app.py`](../service/a2a_app.py)) — a discoverable Agent Card at `/.well-known/agent-card.json` + a JSON-RPC 2.0 endpoint, framework-agnostic. Verify with `uv run python -m scripts.verify_a2a` (stock `a2a-sdk` client; no cloud creds).
+- **A2A — internal mesh transport:** the hub-and-spoke inter-agent calls go through [`shared/a2a.py`](../shared/a2a.py) as in-process ADK `Runner` streams; one cached Runner per agent, per-call session ids.
+- **Tracing:** OpenTelemetry spans across every A2A hop, exported over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (no-op otherwise); span names pinned in the [implementation plan](~/.claude/plans/the-ending-of-the-shimmering-reef.md) §8.
 - **Webhook retry:** sync-first-attempt with async sweep; `2^attempt`-second backoff (2, 4, 8, 16, 32s), dead-letter at attempt=5. Idempotency by `event_id`. See [`CLAUDE.md`](../CLAUDE.md) "Webhook semantics".
 
 ## Deployment
 
-Each agent ships to Vertex AI Agent Engine as a separate ReasoningEngine resource via [`scripts/deploy_agent.py`](../scripts/deploy_agent.py). The FastAPI gateway runs on Cloud Run, mounting the static demo UI and proxying customer REST calls into A2A. IAM is one service account per agent + one per service; secrets pulled from Secret Manager at container start.
+One Fly.io machine runs the whole system: the FastAPI gateway (static demo UI, customer REST, webhook retry loop) with all five ADK agents loaded in-process. Postgres is Supabase over a plain asyncpg DSN (`DATABASE_URL`). Secrets (`GOOGLE_API_KEY`, `DATABASE_URL`, `WEBHOOK_SIGNING_KEY`) are Fly secrets, landing as env vars at container start. Deploy with `fly deploy` (see [`fly.toml`](../fly.toml)); provision the database per [`scripts/provision_supabase.sql`](../scripts/provision_supabase.sql).
+
+Sessions are in-memory (`shared/a2a.py`), so the service is pinned to one machine; swap in a DB-backed `SessionService` before scaling out.

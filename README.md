@@ -1,8 +1,8 @@
 # surplusAS-agents-2.0
 
-SurplusAS multi-agent service. Hub-and-spoke topology on **Vertex AI Agent Engine**:
+SurplusAS multi-agent service. Hub-and-spoke topology — one FastAPI service on **Fly.io**, all five ADK agents running **in-process**:
 
-- **Concierge** (`gemini-2.5-pro`) — single externally-addressable agent; routes merchant turns to specialists via A2A.
+- **Concierge** (`gemini-2.5-pro`) — single externally-addressable agent; routes merchant turns to specialists.
 - **Pricing** (`gemini-2.5-flash`) — thin LLM shell over the deterministic pricing engine.
 - **Onboarding** (`gemini-2.5-flash`) — converts merchant freeform into a `MerchantProfile`.
 - **Listing Intake** (`gemini-2.5-flash`) — parses drafts; calls Pricing laterally for live anchors.
@@ -10,9 +10,9 @@ SurplusAS multi-agent service. Hub-and-spoke topology on **Vertex AI Agent Engin
 
 Customer surface: **REST + webhooks** (HMAC-SHA256 signed, at-least-once, 5 retries).
 
-**Open A2A surface (Track-3 interoperability mandate):** every agent is published over the **open Agent-to-Agent protocol** via ADK's native `to_a2a()` adapter (`service/a2a_app.py`) — a discoverable Agent Card at `/.well-known/agent-card.json` plus a JSON-RPC 2.0 endpoint, so any A2A-speaking enterprise agent (ADK, LangGraph, CrewAI, …) can discover and call it. Reproduce with `uv run python -m scripts.verify_a2a` (uses the stock `a2a-sdk` client; no GCP creds needed).
+Models run on the **Gemini Developer API** (`GOOGLE_API_KEY`; no GCP project). Postgres is **Supabase** over a plain asyncpg DSN. The internal mesh (`shared/a2a.py`) runs each agent through a cached in-process ADK `Runner` — no network hop between agents.
 
-Internal mesh: hub-and-spoke inter-agent calls run over Vertex AI Agent Engine's managed, ID-token-authenticated streaming channel (`async_stream_query` against the deployed reasoning engines, in `shared/a2a.py`).
+**Open A2A surface:** every agent can also be published over the **open Agent-to-Agent protocol** via ADK's native `to_a2a()` adapter (`service/a2a_app.py`) — a discoverable Agent Card at `/.well-known/agent-card.json` plus a JSON-RPC 2.0 endpoint, so any A2A-speaking enterprise agent (ADK, LangGraph, CrewAI, …) can discover and call it. Reproduce with `uv run python -m scripts.verify_a2a` (uses the stock `a2a-sdk` client; no cloud creds needed).
 
 ---
 
@@ -20,9 +20,9 @@ Internal mesh: hub-and-spoke inter-agent calls run over Vertex AI Agent Engine's
 
 This repository was created on 2026-04-28 (within the contest period 2026-04-22 → 2026-06-05) for the **Google for Startups AI Agents Challenge — Track 3 (Refactor for Marketplace + Gemini Enterprise)**.
 
-The deterministic pricing engine consumed via the `vendor/surplusas-pricing` git submodule was developed in a separate, pre-existing repository (`surplusAS-pricing-intel`). It is included as a **backend dependency** — the same way any project depends on `pydantic`, `google-adk`, or `fastapi`. The agents, the FastAPI gateway, the multi-tenant integration surface, the A2A orchestration, the eval harness, the Terraform/Cloud Build infra, and all observability code in this repository are **net-new** to the contest period.
+The deterministic pricing engine consumed via the `vendor/surplusas-pricing` git submodule was developed in a separate, pre-existing repository (`surplusAS-pricing-intel`). It is included as a **backend dependency** — the same way any project depends on `pydantic`, `google-adk`, or `fastapi`. The agents, the FastAPI gateway, the multi-tenant integration surface, the A2A orchestration, the eval harness, and all observability code in this repository are **net-new** to the contest period.
 
-A signed git tag at the first commit (`v0.0.0-contest-start`) anchors the repository's birthdate. `git log --oneline` is the audit trail.
+A signed git tag at the first commit (`v0.0.0-contest-start`) anchors the repository's birthdate. `git log --oneline` is the audit trail. (Post-contest, the service was migrated off the GCP runtime — Vertex Agent Engine → in-process ADK Runners, Cloud Run → Fly.io, Cloud SQL → Supabase — with Gemini kept as the model. See the `offgcp-*` commits.)
 
 ---
 
@@ -32,7 +32,7 @@ A signed git tag at the first commit (`v0.0.0-contest-start`) anchors the reposi
 # Install deps
 uv sync
 
-# Run the gateway locally
+# Run the gateway locally (.env needs GOOGLE_API_KEY + DATABASE_URL)
 uv run python -m service.main
 
 # Run unit tests
@@ -42,47 +42,55 @@ uv run pytest tests/unit
 uv run ruff check .
 uv run mypy agents shared service
 
-# Run golden evals (requires Vertex AI access; run per agent)
-uv run python -m evals.runner --agent pricing --threshold 0.85
+# Golden evals — local mode is pure-Python (CI); remote mode runs the live model in-process
+uv run python -m evals.runner --agent pricing --threshold 0.85 --mode local
+uv run python -m evals.runner --agent pricing --threshold 0.85 --mode remote
+```
+
+## Database provisioning (Supabase)
+
+Fresh-Postgres standup order (details in `scripts/provision_supabase.sql`):
+
+1. `vendor/surplusas-pricing/sql/001_reference_prices.sql`, then `002_pricing_coefficients.sql`
+2. `scripts/provision_supabase.sql` Section A (app role + `public.partner_keys`)
+3. `DATABASE_URL=<owner-dsn> uv run python scripts/apply_schema.py` (creates the `agents` schema)
+4. `scripts/provision_supabase.sql` Section B (grants; enforces the append-only audit log)
+5. `DATABASE_URL=<owner-dsn> uv run python scripts/seed_demo_merchant.py` (demo key + coefficients + anchors)
+
+Use the **session-mode pooler or direct** connection string — transaction-mode pgBouncer (port 6543) breaks asyncpg prepared statements.
+
+## Deploy (Fly.io)
+
+```bash
+fly launch --no-deploy      # first time only
+fly secrets set GOOGLE_API_KEY=... DATABASE_URL=... WEBHOOK_SIGNING_KEY=...
+fly deploy
+```
+
+Live smoke once deployed:
+
+```bash
+curl -s https://<app>.fly.dev/healthz
+curl -s -X POST https://<app>.fly.dev/v1/concierge \
+     -H "Authorization: Bearer sk_demo_surplus_2026" \
+     -H "content-type: application/json" \
+     -d '{"message":"I have 10 day-old turkey sandwiches, retail $12 each, expiring in 4 hours"}'
 ```
 
 ## A2A surface (open protocol)
 
-Each agent is served over the open A2A protocol via ADK's `to_a2a()` adapter.
-
 ```bash
-# Verify locally with the stock a2a-sdk client (no GCP creds needed):
+# Verify locally with the stock a2a-sdk client (no cloud creds needed):
 uv run python -m scripts.verify_a2a pricing
 #   -> discovers /.well-known/agent-card.json, exercises the JSON-RPC endpoint
 
-# Serve one agent's A2A surface locally:
+# Serve one agent's A2A surface:
 A2A_AGENT=pricing uv run uvicorn service.a2a_app:app --port 8080
-
-# Deploy it to Cloud Run (builds the Dockerfile via Cloud Build, wires the
-# agent SA + Cloud SQL + DB secret, advertises the live URL in the Agent Card):
-scripts/deploy_a2a_cloudrun.sh pricing          # or scripts/deploy_a2a_cloudrun.ps1
-```
-
-After deploy, the card is public at `https://<service-url>/.well-known/agent-card.json`.
-
-**Live endpoints — all five agents are A2A-discoverable on Cloud Run** (public Agent Card, no auth):
-
-| Agent | Agent Card URL |
-|---|---|
-| Concierge | https://surplusas-a2a-concierge-dcsgbetuga-uc.a.run.app/.well-known/agent-card.json |
-| Pricing | https://surplusas-a2a-pricing-dcsgbetuga-uc.a.run.app/.well-known/agent-card.json |
-| Onboarding | https://surplusas-a2a-onboarding-dcsgbetuga-uc.a.run.app/.well-known/agent-card.json |
-| Listing Intake | https://surplusas-a2a-listing-intake-dcsgbetuga-uc.a.run.app/.well-known/agent-card.json |
-| Dispute Triage | https://surplusas-a2a-dispute-triage-dcsgbetuga-uc.a.run.app/.well-known/agent-card.json |
-
-```bash
-# Discover any agent over the open protocol (no auth required):
-curl -s https://surplusas-a2a-pricing-dcsgbetuga-uc.a.run.app/.well-known/agent-card.json | python -m json.tool
 ```
 
 ## Architecture
 
-See [`docs/architecture.md`](docs/architecture.md) for the agent topology (hub-and-spoke with two lateral A2A edges), the Beat 1 + Beat 2 sequence diagrams, and the hard guardrails on the data plane. The implementation plan lives at `~/.claude/plans/the-ending-of-the-shimmering-reef.md`.
+See [`docs/architecture.md`](docs/architecture.md) for the agent topology (hub-and-spoke with two lateral A2A edges), the Beat 1 + Beat 2 sequence diagrams, and the hard guardrails on the data plane.
 
 ## License
 

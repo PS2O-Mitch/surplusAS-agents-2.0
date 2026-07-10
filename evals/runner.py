@@ -2,15 +2,16 @@
 
 Local mode:
     Calls the deterministic pricing engine in-process with the inline
-    anchor + coefficients shipped on each golden case. No DB, no Vertex,
-    no Gemini. Used in CI; the only thing CI gates against is whether the
-    formula's output drifted from the frozen golden.
+    anchor + coefficients shipped on each golden case. No DB, no Gemini.
+    Used in CI; the only thing CI gates against is whether the formula's
+    output drifted from the frozen golden.
 
 Remote mode:
-    Calls the deployed Agent Engine via the SDK (`vertexai.agent_engines`)
-    using the same `mode/input` envelope `shared.a2a` uses. The deployed
-    Pricing agent will resolve coefficients + anchor from Cloud SQL, so
-    the goldens' inline coefficients/anchor are ignored.
+    Runs the LIVE model through the in-process agent (`shared.a2a`'s ADK
+    Runner) using the same `mode/input` envelope. Needs GOOGLE_API_KEY +
+    DATABASE_URL — the agent resolves coefficients + anchor from Postgres,
+    so the goldens' inline coefficients/anchor are ignored. This is the
+    live-model smoke test.
 
 Threshold gate: pass-rate (cases-passed-all-metrics / total) ≥ threshold.
 
@@ -159,7 +160,7 @@ def _run_concierge_local_stub(case: dict[str, Any]) -> CaseResult:
 
 
 async def _run_remote(agent: str, case: dict[str, Any]) -> CaseResult:
-    """Deployed-agent eval — calls the live Agent Engine via the SDK.
+    """Live-model eval — runs the agent in-process via `shared.a2a`.
 
     Uses the same envelope as `shared.a2a.call_peer_agent` (mode/input dict).
     Parses the final stream event's payload to extract pressures + price.
