@@ -61,20 +61,21 @@ Use the **session-mode pooler or direct** connection string — transaction-mode
 
 ## Deploy (Fly.io)
 
+Live at **https://surplusas-agents.fly.dev** (app `surplusas-agents`, one machine in `iad`; scaled to 1 on purpose — see `fly.toml`).
+
 ```bash
-fly launch --no-deploy      # first time only
 fly secrets set GOOGLE_API_KEY=... DATABASE_URL=... WEBHOOK_SIGNING_KEY=...
 fly deploy
 ```
 
-Live smoke once deployed:
+Live smoke:
 
 ```bash
-curl -s https://<app>.fly.dev/healthz
-curl -s -X POST https://<app>.fly.dev/v1/concierge \
-     -H "Authorization: Bearer sk_demo_surplus_2026" \
+curl -s https://surplusas-agents.fly.dev/healthz
+curl -s -X POST https://surplusas-agents.fly.dev/v1/concierge \
+     -H "Authorization: Bearer <partner api key>" \
      -H "content-type: application/json" \
-     -d '{"message":"I have 10 day-old turkey sandwiches, retail $12 each, expiring in 4 hours"}'
+     -d '{"partner_id":"<partner id>","message":"I have 10 day-old turkey sandwiches, retail $12 each, expiring in 4 hours"}'
 ```
 
 ## A2A surface (open protocol)
