@@ -1,33 +1,22 @@
-"""Reset the agents tables for a clean Beat 1 + Beat 2 demo run.
+"""Reset the agents tables and seed the reference data for a working demo.
 
-Wipes the agent-owned tables so the video shoot starts from a known
-empty state. `public.partner_keys` is left alone (the demo partner
-must already exist there — seeded once during the Phase 5 cutover).
+Wipes the agent-owned tables so a demo run starts from a known empty
+state, then idempotently seeds everything a fresh Postgres needs:
+
+  public.partner_keys        — the demo key `sk_demo_surplus_2026`
+  public.pricing_coefficients — 9 categories × region US, version 1
+                                (via vendor jobs/seed_coefficients._insert_seeds)
+  public.reference_prices    — one anchor row per category at region US,
+                                sources honoring pricing_engine.anchors
+                                SOURCE_PREFERENCE (apify for prepared
+                                categories, off for grocery)
 
 What's wiped:
-  agents.webhook_deliveries
-  agents.webhook_subscriptions
-  agents.disputes
-  agents.listings
-  agents.recommendation_log
+  agents.webhook_deliveries, agents.webhook_subscriptions,
+  agents.disputes, agents.listings, agents.recommendation_log
 
-What's NOT wiped:
-  public.partner_keys             — credentials live here
-  public.pricing_coefficients     — owned by surplusAS-pricing-intel
-  agents.reference_prices         — refreshed by the nightly job
-
-Prereqs (same as scripts/apply_schema.py):
-  gcloud auth application-default login
-  PG_USER, PG_PASSWORD exported in the environment
-
-Usage:
-  PG_USER=surplusas_app PG_PASSWORD='...' \
-    uv run python scripts/seed_demo_merchant.py
-
-The script also confirms the demo partner key
-(`sk_demo_surplus_2026`) exists in `public.partner_keys`; if missing
-it prints a SQL hint rather than auto-inserting (credentials are too
-sensitive for an auto-seed to handle).
+Run with the OWNER dsn (Supabase `postgres` role):
+  DATABASE_URL='postgresql://postgres:...' uv run python scripts/seed_demo_merchant.py
 """
 
 from __future__ import annotations
@@ -35,27 +24,14 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from typing import TYPE_CHECKING
 
-from google.cloud.sql.connector import Connector, IPTypes
+import asyncpg
 
-if TYPE_CHECKING:
-    import asyncpg
+import shared.pricing_intel  # noqa: F401 — puts vendor/surplusas-pricing on sys.path
 
-PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "ps2o-surplusas-api")
-INSTANCE = os.environ.get(
-    "CLOUD_SQL_INSTANCE",
-    "ps2o-surplusas-api:us-central1:surplusas-db",
-)
-DB_NAME = os.environ.get("DB_NAME", "surplusas")
-PG_USER = os.environ.get("PG_USER")
-PG_PASSWORD = os.environ.get("PG_PASSWORD")
 DEMO_PARTNER = "sk_demo_surplus_2026"
+DEMO_PARTNER_ID = "demo_001"
 
-# Order matters — webhook_deliveries depends on webhook_subscriptions;
-# disputes depend on recommendation_log; listings depend on
-# recommendation_log. TRUNCATE ... CASCADE handles the FK closure, but
-# we TRUNCATE explicitly to log what was wiped.
 TRUNCATE_ORDER = (
     "agents.webhook_deliveries",
     "agents.webhook_subscriptions",
@@ -64,72 +40,75 @@ TRUNCATE_ORDER = (
     "agents.recommendation_log",
 )
 
+# One plausible anchor row per category at country level. Source + tier must
+# satisfy pricing_engine.anchors.SOURCE_PREFERENCE or lookups return no_anchor.
+# (category, tier, source, p25, p50, p75)
+ANCHOR_SEEDS: tuple[tuple[str, str | None, str, float, float, float], ...] = (
+    ("prepared_meal", "mid", "apify", 8.50, 11.50, 15.00),
+    ("bakery",        "mid", "apify", 3.50, 5.00, 7.50),
+    ("beverage",      "mid", "apify", 3.00, 4.50, 6.00),
+    ("deli",          "mid", "apify", 7.00, 9.50, 12.50),
+    ("produce",       None,  "off",   2.00, 3.50, 5.50),
+    ("dairy",         None,  "off",   2.50, 4.00, 6.00),
+    ("packaged_goods", None, "off",   3.00, 5.00, 8.00),
+    ("frozen",        None,  "off",   4.00, 6.50, 9.00),
+    ("mixed_bag",     None,  "off",   5.00, 8.00, 12.00),
+)
+
 
 async def _seed() -> None:
-    if not PG_USER or not PG_PASSWORD:
-        sys.stderr.write("ERROR: PG_USER and PG_PASSWORD must be exported.\n")
+    dsn = os.environ.get("DATABASE_URL", "")
+    if not dsn:
+        sys.stderr.write("ERROR: DATABASE_URL must be exported.\n")
         sys.exit(1)
 
-    connector = Connector(loop=asyncio.get_running_loop())
+    conn = await asyncpg.connect(dsn)
     try:
-        conn: asyncpg.Connection = await connector.connect_async(
-            INSTANCE,
-            "asyncpg",
-            user=PG_USER,
-            password=PG_PASSWORD,
-            db=DB_NAME,
-            ip_type=IPTypes.PUBLIC,
+        print("--- Wiping demo state ---")
+        await conn.execute(
+            "TRUNCATE " + ", ".join(TRUNCATE_ORDER) + " RESTART IDENTITY CASCADE"
         )
-        try:
-            print(f"Connected to {INSTANCE}/{DB_NAME} as {PG_USER}")
-            print()
-            print("--- Pre-seed row counts ---")
-            for tbl in TRUNCATE_ORDER:
-                count = await conn.fetchval(f"SELECT COUNT(*) FROM {tbl}")
-                print(f"  {tbl}: {count}")
+        print("  TRUNCATE ... RESTART IDENTITY CASCADE: ok")
 
-            print()
-            print("--- Wiping demo state ---")
-            # Single TRUNCATE with CASCADE handles everything safely.
+        print()
+        print("--- Partner key ---")
+        await conn.execute(
+            "INSERT INTO public.partner_keys (api_key, partner_id, context_json, active) "
+            "VALUES ($1, $2, '{}'::jsonb, TRUE) ON CONFLICT DO NOTHING",
+            DEMO_PARTNER, DEMO_PARTNER_ID,
+        )
+        row = await conn.fetchrow(
+            "SELECT api_key, partner_id, active FROM public.partner_keys WHERE api_key = $1",
+            DEMO_PARTNER,
+        )
+        assert row is not None
+        print(f"  ok: api_key={row['api_key']} partner_id={row['partner_id']}")
+
+        print()
+        print("--- Pricing coefficients (vendor seed, idempotent) ---")
+        from jobs.seed_coefficients import _insert_seeds  # vendor, on sys.path
+
+        inserted = await _insert_seeds(conn, "postgres")
+        total = await conn.fetchval("SELECT COUNT(*) FROM public.pricing_coefficients")
+        print(f"  {inserted} new row(s); {total} total")
+
+        print()
+        print("--- Reference prices (anchors) ---")
+        for category, tier, source, p25, p50, p75 in ANCHOR_SEEDS:
             await conn.execute(
-                "TRUNCATE "
-                + ", ".join(TRUNCATE_ORDER)
-                + " RESTART IDENTITY CASCADE"
+                "INSERT INTO public.reference_prices "
+                "(category, region, tier, source, p25, p50, p75, sample_count, updated_at) "
+                "VALUES ($1, 'US', $2, $3, $4, $5, $6, 25, NOW()) "
+                "ON CONFLICT DO NOTHING",
+                category, tier, source, p25, p50, p75,
             )
-            print("  TRUNCATE ... RESTART IDENTITY CASCADE: ok")
+        anchors = await conn.fetchval("SELECT COUNT(*) FROM public.reference_prices")
+        print(f"  {anchors} anchor row(s) present")
 
-            print()
-            print("--- Post-seed row counts ---")
-            for tbl in TRUNCATE_ORDER:
-                count = await conn.fetchval(f"SELECT COUNT(*) FROM {tbl}")
-                print(f"  {tbl}: {count}")
-
-            print()
-            print("--- Partner key check ---")
-            row = await conn.fetchrow(
-                "SELECT api_key, partner_id, active "
-                "FROM public.partner_keys WHERE api_key = $1",
-                DEMO_PARTNER,
-            )
-            if row is None:
-                print(f"  MISSING: {DEMO_PARTNER} not found in public.partner_keys")
-                print(
-                    "  Insert with (as schema owner):\n"
-                    f"    INSERT INTO public.partner_keys (api_key, partner_id, active) "
-                    f"VALUES ('{DEMO_PARTNER}', 'demo_001', TRUE);"
-                )
-            else:
-                print(
-                    f"  ok: api_key={row['api_key']} "
-                    f"partner_id={row['partner_id']} active={row['active']}"
-                )
-
-            print()
-            print("Demo reset complete.")
-        finally:
-            await conn.close()
+        print()
+        print("Demo seed complete.")
     finally:
-        await connector.close_async()
+        await conn.close()
 
 
 if __name__ == "__main__":
