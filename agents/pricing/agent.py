@@ -6,8 +6,8 @@ number. All numeric output flows through `engine_adapter.price_listing` /
 `pricing_engine.formula.recommend()` and the only writers to
 `agents.recommendation_log` (CLAUDE.md guardrails #1 + #3).
 
-The exported `agent` object is what `vertexai.agent_engines.create()`
-wraps in an `AdkApp` for deployment to Agent Engine.
+The exported `agent` object is loaded by `shared.a2a.load_agent()` for the
+in-process Runner mesh and by `service/a2a_app.py` for the open A2A surface.
 """
 
 from __future__ import annotations

@@ -10,16 +10,23 @@ When real agent code lands, replace this file with per-module unit tests.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi.testclient import TestClient
 
 from service.app import create_app
 from shared.config import Settings
 
+if TYPE_CHECKING:
+    import pytest
 
-def test_settings_construct_without_secrets() -> None:
+
+def test_settings_construct_without_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Hermetic: another module's get_settings() may have mirrored a dev
+    # machine's .env values into os.environ before this test runs.
+    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
     s = Settings(_env_file=None)
-    assert s.google_cloud_project == "ps2o-surplusas-api"
-    assert s.google_cloud_location == "us-central1"
+    assert s.google_genai_use_vertexai is False
     assert s.concierge_model == "gemini-2.5-pro"
     assert s.pricing_model == "gemini-2.5-flash"
 

@@ -62,6 +62,9 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     init_logging(settings.log_level)
     init_tracing("surplusas-agents-gateway")
+    if not settings.google_api_key and not settings.google_genai_use_vertexai:
+        _log.warning("google_api_key_missing",
+                     hint="agents will fail at first model call; set GOOGLE_API_KEY")
     # DB pool initialised lazily on first use; tests override this entirely.
     retry_task = asyncio.create_task(
         _webhook_retry_loop(), name="webhook-retry-loop",
@@ -78,7 +81,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="surplusAS-agents-2.0",
         version="0.1.0",
-        description="Multi-agent service for SurplusAS on Vertex AI Agent Engine.",
+        description="Multi-agent service for SurplusAS.",
         lifespan=_lifespan,
     )
 

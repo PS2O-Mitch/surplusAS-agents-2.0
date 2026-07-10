@@ -1,11 +1,11 @@
-"""Async Postgres pool via the Cloud SQL Python Connector.
+"""Async Postgres pool over a plain DSN (`DATABASE_URL`).
 
-Single process-wide pool. The connector handles IAM auth and Cloud SQL Auth
-Proxy duties without a sidecar process — this matches the pattern used in
-`SurplusAS-API-2.0/shared/db.py` and `surplusAS-pricing-intel/db/`.
+Single process-wide pool. Production points at Supabase — use the
+session-mode pooler or the direct connection string; transaction-mode
+pgBouncer (port 6543) breaks asyncpg prepared statements.
 
 In tests the pool is initialised against a local Postgres via
-`init_pool_from_dsn(dsn)` instead of the connector.
+`init_pool_from_dsn(dsn)` directly.
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ import json
 from typing import Any
 
 import asyncpg
-from google.cloud.sql.connector import Connector, IPTypes
 
 from shared.config import get_settings
 
@@ -43,47 +42,18 @@ async def _init_connection(conn: asyncpg.Connection) -> None:
         )
 
 
-async def _create_connection(*args: Any, **kwargs: Any) -> asyncpg.Connection:
-    """asyncpg connection factory backed by the Cloud SQL connector.
-
-    asyncpg's `create_pool(connect=...)` invokes this callable with internal
-    kwargs (notably `loop=` on older asyncpg versions); accept and ignore
-    them so the factory stays decoupled from asyncpg's pool internals.
-
-    `Connector()` with no `loop=` arg spins up a new event loop on a daemon
-    thread (connector.py:144) — `connect_async` then refuses calls from any
-    other loop. We pin the connector to the factory's running loop so the
-    request loop and the connector's loop are the same object.
-    """
-    settings = get_settings()
-    connector = Connector(loop=asyncio.get_running_loop())
-    return await connector.connect_async(
-        settings.cloud_sql_instance,
-        "asyncpg",
-        user=settings.db_user,
-        password=settings.db_password,
-        db=settings.db_name,
-        ip_type=IPTypes.PUBLIC,
-    )
-
-
 async def init_pool() -> asyncpg.Pool:
-    """Initialise the process-wide pool (Cloud SQL Connector path)."""
-    global _pool
-    async with _lock:
-        if _pool is None:
-            _pool = await asyncpg.create_pool(
-                connect=_create_connection,
-                init=_init_connection,
-                min_size=1,
-                max_size=10,
-            )
-    assert _pool is not None
-    return _pool
+    """Initialise the process-wide pool from `DATABASE_URL`."""
+    dsn = get_settings().database_url
+    if not dsn:
+        raise RuntimeError("DATABASE_URL not set; required for the asyncpg pool.")
+    return await init_pool_from_dsn(dsn)
 
 
 async def init_pool_from_dsn(dsn: str) -> asyncpg.Pool:
-    """Test/local override: pool against a plain DSN, bypassing the connector."""
+    """Pool against a plain DSN. `init_pool()` delegates here; tests call it
+    directly with a local-Postgres DSN. `max_size=4` respects Supabase's
+    session-pooler connection budget on the entry tier."""
     global _pool
     async with _lock:
         if _pool is None:

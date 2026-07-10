@@ -1,4 +1,8 @@
-"""OpenTelemetry tracing wired to Cloud Trace.
+"""OpenTelemetry tracing, exported over OTLP when configured.
+
+Spans are always recorded; they leave the process only if
+`OTEL_EXPORTER_OTLP_ENDPOINT` is set (any OTLP-speaking backend — Grafana,
+Honeycomb, a local collector). Without it the provider is a no-op.
 
 Span names and attribute conventions are pinned in the implementation plan
 §8 so log/trace dashboards remain queryable across the five agents.
@@ -7,6 +11,7 @@ Span names and attribute conventions are pinned in the implementation plan
 from __future__ import annotations
 
 import contextlib
+import os
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -24,7 +29,7 @@ _INITIALISED = False
 
 
 def init_tracing(service_name: str) -> None:
-    """Idempotently install the global OTel tracer + Cloud Trace exporter."""
+    """Idempotently install the global OTel tracer (+ OTLP exporter if configured)."""
     global _INITIALISED
     if _INITIALISED:
         return
@@ -32,15 +37,15 @@ def init_tracing(service_name: str) -> None:
     resource = Resource.create({"service.name": service_name})
     provider = TracerProvider(resource=resource)
 
-    # Attempt to attach the Cloud Trace exporter; absence of ADC, project, or
-    # an enabled Cloud Trace API should not crash the process — local dev
-    # without GCP creds runs against the noop tracer.
-    with contextlib.suppress(Exception):
-        from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
+    # Export only when an OTLP endpoint is configured; a broken exporter
+    # must not crash the process — spans just stay in-process (no-op).
+    if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
+        with contextlib.suppress(Exception):
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+                OTLPSpanExporter,
+            )
 
-        provider.add_span_processor(
-            BatchSpanProcessor(CloudTraceSpanExporter())  # type: ignore[no-untyped-call]
-        )
+            provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 
     trace.set_tracer_provider(provider)
     _INITIALISED = True

@@ -14,6 +14,7 @@ import json
 from typing import Any
 
 from shared import db
+from shared.config import get_settings
 
 
 class _FakeConn:
@@ -73,12 +74,15 @@ async def test_init_pool_wires_json_codec_init(monkeypatch: Any) -> None:
         return _FakePool()
 
     monkeypatch.setattr(db.asyncpg, "create_pool", fake_create_pool)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+    get_settings.cache_clear()
     db._pool = None
     try:
         await db.init_pool()
         assert captured.get("init") is db._init_connection
     finally:
         db._pool = None
+        get_settings.cache_clear()
 
 
 async def test_init_pool_from_dsn_wires_json_codec_init(monkeypatch: Any) -> None:

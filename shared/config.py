@@ -1,8 +1,8 @@
 """Centralised env-driven configuration.
 
 All values come from environment variables (12-factor). In production the
-secrets (DB password, webhook signing key) are pulled from Secret Manager
-into env vars at container start by the Agent Engine / Cloud Run runtime.
+secrets (Gemini API key, DB DSN, webhook signing key) are injected as env
+vars at container start by the host (Fly secrets).
 """
 
 from __future__ import annotations
@@ -24,10 +24,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # --- Vertex AI / Gemini ---------------------------------------------
-    google_genai_use_vertexai: bool = True
-    google_cloud_project: str = "ps2o-surplusas-api"
-    google_cloud_location: str = "us-central1"
+    # --- Gemini ----------------------------------------------------------
+    # Default path: Gemini Developer API via GOOGLE_API_KEY. The Vertex
+    # escape hatch stays for anyone re-pointing at a GCP project.
+    google_genai_use_vertexai: bool = False
+    google_api_key: str = ""
 
     concierge_model: str = "gemini-2.5-pro"
     dispute_triage_model: str = "gemini-2.5-pro"
@@ -35,21 +36,11 @@ class Settings(BaseSettings):
     onboarding_model: str = "gemini-2.5-flash"
     listing_intake_model: str = "gemini-2.5-flash"
 
-    # --- Cloud SQL ------------------------------------------------------
-    cloud_sql_instance: str = "ps2o-surplusas-api:us-central1:surplusas-db"
-    db_name: str = "surplusas"
-    db_user: str = "surplusas_agents_app"
-    db_password: str = ""
-
-    # --- Inter-agent A2A peers -----------------------------------------
-    # Vertex AI Agent Engine resource names, e.g.
-    # projects/<num>/locations/us-central1/reasoningEngines/<id>.
-    # Populated by Terraform outputs after each agent is deployed.
-    concierge_agent_resource: str = ""
-    pricing_agent_resource: str = ""
-    onboarding_agent_resource: str = ""
-    listing_intake_agent_resource: str = ""
-    dispute_triage_agent_resource: str = ""
+    # --- Postgres ---------------------------------------------------------
+    # Plain asyncpg DSN (Supabase). Use the session-mode pooler or the
+    # direct connection — transaction-mode pgBouncer breaks asyncpg
+    # prepared statements.
+    database_url: str = ""
 
     # --- Webhooks -------------------------------------------------------
     webhook_signing_key: str = ""
@@ -64,10 +55,11 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Return the process-wide settings, instantiated once."""
-    # Ensure ADK picks up the Vertex flag before any google.genai import.
+    # google-genai reads its config from os.environ (not pydantic's .env),
+    # so mirror the relevant values before any google.genai client is built.
     settings = Settings()
     if settings.google_genai_use_vertexai:
         os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "true")
-        os.environ.setdefault("GOOGLE_CLOUD_PROJECT", settings.google_cloud_project)
-        os.environ.setdefault("GOOGLE_CLOUD_LOCATION", settings.google_cloud_location)
+    elif settings.google_api_key:
+        os.environ.setdefault("GOOGLE_API_KEY", settings.google_api_key)
     return settings
