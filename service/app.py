@@ -31,9 +31,9 @@ _log = get_logger("surplusas.gateway.webhook_retry")
 async def _webhook_retry_loop() -> None:
     """Periodically sweep failed webhook deliveries.
 
-    Phase 6 ships this as an in-process background task on the gateway.
-    Phase 7+ can extract to a dedicated Cloud Run job if redelivery SLOs
-    demand independent scaling. A failed sweep is logged-and-continued —
+    Runs as an in-process background task on the gateway; extract to a
+    dedicated worker process if redelivery SLOs ever demand independent
+    scaling. A failed sweep is logged-and-continued —
     a transient DB or HTTP failure must not kill the loop, otherwise we
     silently lose retry coverage until the gateway restarts.
     """

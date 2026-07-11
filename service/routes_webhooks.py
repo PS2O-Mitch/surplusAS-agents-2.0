@@ -1,8 +1,7 @@
 """REST surface for webhook subscription lifecycle.
 
-Phase 4 endpoints: POST (create) and DELETE (deactivate). Listing all
-subscriptions, rotating secrets, and resolution-lifecycle endpoints are
-Phase 5.
+POST (create) and DELETE (deactivate). Listing subscriptions and rotating
+secrets are not implemented yet.
 """
 
 from __future__ import annotations

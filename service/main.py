@@ -11,7 +11,7 @@ def main() -> None:
     settings = get_settings()
     uvicorn.run(
         "service.app:app",
-        host="0.0.0.0",  # noqa: S104  Cloud Run / local dev both need 0.0.0.0
+        host="0.0.0.0",  # noqa: S104  container / local dev both need 0.0.0.0
         port=settings.port,
         log_level=settings.log_level.lower(),
     )

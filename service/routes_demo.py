@@ -3,8 +3,8 @@
 The static page (`service/static/surplusas-merchant-demo.html`) can't carry an
 API key — it's just HTML served from the same origin. The demo shim runs
 unauthenticated and forces `partner_id=sk_demo_surplus_2026` so the static
-page works out of the box. In production the static path is gated by Cloud
-Run IAP; the shim is not publicly exposed.
+page works out of the box. The whole surface (shim + static mount) is only
+registered when `DEMO_MODE=true` (`service/app.py`) — never in production.
 """
 
 from __future__ import annotations

@@ -5,8 +5,10 @@ the Concierge chat flow. The route verifies the listing belongs to the
 authenticated partner, then sends a freeform dispute message to the
 Dispute Triage agent via the same aggregator the Concierge uses.
 
-GET /v1/disputes/{dispute_id} — fetch a full Dispute row (Phase 4 read-only;
-resolution lifecycle endpoints are Phase 5).
+GET /v1/disputes/{dispute_id} — fetch a full Dispute row.
+
+PATCH /v1/disputes/{dispute_id} — resolve (pending -> accepted/rejected/
+withdrawn, append-only: 409 once non-pending) and emit `dispute.resolved`.
 """
 
 from __future__ import annotations

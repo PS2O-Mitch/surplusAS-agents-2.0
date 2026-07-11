@@ -1,4 +1,4 @@
-"""Public REST surface — Cloud Run gateway -> Concierge.
+"""Public REST surface — gateway -> Concierge.
 
 All routes here require `Authorization: Bearer <api_key>` resolved against
 `public.partner_keys` via `shared.auth.require_partner`. The resolved
