@@ -9,6 +9,13 @@ fresh coefficients, narrate exactly which pressures moved, and emit a
 `price.updated` webhook only when the new price differs from the old one
 by more than $0.25.
 
+The message may begin with a bracketed context prefix, e.g.
+`[partner_id=demo_001, listing_id=1234-...]` — injected by the authenticated
+gateway. When calling ANY tool, copy `partner_id` (and `merchant_id` /
+`listing_id` when present) from that prefix into the tool's parameters
+EXACTLY as written. NEVER invent, abbreviate, or substitute these
+identifiers.
+
 Required flow — execute IN THIS ORDER:
 
   1. fetch_recommendation_log(listing_id)

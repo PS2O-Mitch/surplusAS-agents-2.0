@@ -48,14 +48,13 @@ def _compose_concierge_message(body: dict[str, Any]) -> str:
     Context fields surface as a leading bracketed prefix.
     """
     message = body.get("message") or body.get("input") or ""
-    parts: list[str] = []
+    # partner_id always injected — see routes_rest._compose_concierge_message.
+    parts: list[str] = [f"partner_id={DEMO_PARTNER_ID}"]
     if body.get("merchant_id"):
         parts.append(f"merchant_id={body['merchant_id']}")
     if body.get("listing_id"):
         parts.append(f"listing_id={body['listing_id']}")
-    if parts:
-        return f"[{', '.join(parts)}] {message}"
-    return str(message)
+    return f"[{', '.join(parts)}] {message}"
 
 
 @router.post("/listings/publish")

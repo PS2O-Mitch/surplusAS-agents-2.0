@@ -60,7 +60,9 @@ def test_post_concierge_invokes_concierge_handle(
     assert body["specialist_called"] == "listing_intake"
     assert body["specialist_payload"] == {"listing_id": "abc"}
     assert captured["partner_id"] == "sk_demo"
-    assert captured["user_message"] == "10 sandwiches expire in 4h"
+    assert captured["user_message"] == (
+        "[partner_id=sk_demo] 10 sandwiches expire in 4h"
+    )
 
 
 def test_post_concierge_rejects_partner_id_mismatch(

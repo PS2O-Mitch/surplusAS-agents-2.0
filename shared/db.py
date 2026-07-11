@@ -22,6 +22,18 @@ _pool: asyncpg.Pool | None = None
 _lock = asyncio.Lock()
 
 
+def _encode_json(value: Any) -> str:
+    """JSONB encoder tolerant of both writer styles.
+
+    Some write sites pass dicts, others pre-serialise with ``json.dumps`` /
+    ``model_dump_json``. A plain ``json.dumps`` encoder would DOUBLE-encode
+    the pre-serialised ones (storing a JSON *string* scalar instead of an
+    object — silently breaking the applied_pressures audit round-trip,
+    guardrail #2), so strings pass through untouched.
+    """
+    return value if isinstance(value, str) else json.dumps(value)
+
+
 async def _init_connection(conn: asyncpg.Connection) -> None:
     """Per-connection setup: register JSON(B) codecs so JSONB columns
     round-trip as Python objects.
@@ -30,13 +42,12 @@ async def _init_connection(conn: asyncpg.Connection) -> None:
     read side, so every read path (`fetch_recommendation_log`, the dispute and
     listing REST GETs) would surface `applied_pressures` / `pressure_diff` /
     `pricing_input` as JSON strings instead of dicts — silently breaking the
-    audit round-trip (CLAUDE.md guardrail #2). The write paths already cast via
-    ``$N::jsonb`` with ``json.dumps``; this is the read-side counterpart.
+    audit round-trip (CLAUDE.md guardrail #2).
     """
     for typename in ("jsonb", "json"):
         await conn.set_type_codec(
             typename,
-            encoder=json.dumps,
+            encoder=_encode_json,
             decoder=json.loads,
             schema="pg_catalog",
         )

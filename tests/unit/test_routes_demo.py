@@ -40,7 +40,9 @@ def test_demo_agent_uses_demo_partner_id(
     assert body["specialist_called"] == "onboarding"
     assert body["specialist_payload"] == {"merchant_id": "abc"}
     assert captured["partner_id"] == "sk_demo_surplus_2026"
-    assert captured["user_message"] == "I run a deli"
+    assert captured["user_message"] == (
+        "[partner_id=sk_demo_surplus_2026] I run a deli"
+    )
 
 
 def test_demo_agent_accepts_legacy_input_field(
@@ -62,7 +64,9 @@ def test_demo_agent_accepts_legacy_input_field(
         json={"mode": "listing_create", "input": "I run a deli in Tampa, FL"},
     )
     assert resp.status_code == 200
-    assert captured["user_message"] == "I run a deli in Tampa, FL"
+    assert captured["user_message"] == (
+        "[partner_id=sk_demo_surplus_2026] I run a deli in Tampa, FL"
+    )
 
 
 def test_demo_agent_prepends_context_to_message(
@@ -85,7 +89,8 @@ def test_demo_agent_prepends_context_to_message(
     )
     assert resp.status_code == 200
     assert captured["user_message"] == (
-        "[merchant_id=m-1, listing_id=abc-123] why is the price low?"
+        "[partner_id=sk_demo_surplus_2026, merchant_id=m-1, listing_id=abc-123] "
+        "why is the price low?"
     )
 
 

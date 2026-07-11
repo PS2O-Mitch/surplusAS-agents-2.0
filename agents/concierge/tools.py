@@ -17,26 +17,28 @@ from shared import a2a
 def _compose_specialist_message(
     message: str,
     *,
+    partner_id: str,
     merchant_id: str | None = None,
     listing_id: str | None = None,
     image_b64: str | None = None,
 ) -> str:
-    """Pack optional context fields as a leading bracketed prefix.
+    """Pack context fields as a leading bracketed prefix.
 
-    Image attachments are deferred to Phase 4 (need multimodal Content
-    wrapping); we surface only the fact that an image was present so the
-    specialist's prompt can ask for it explicitly.
+    partner_id is ALWAYS included: the specialist's persist tools take it as
+    a model-filled parameter, so the true tenant identity must be visible in
+    the specialist's context or the model invents one. Image attachments are
+    deferred (need multimodal Content wrapping); we surface only the fact
+    that an image was present so the specialist's prompt can ask for it
+    explicitly.
     """
-    parts: list[str] = []
+    parts: list[str] = [f"partner_id={partner_id}"]
     if merchant_id:
         parts.append(f"merchant_id={merchant_id}")
     if listing_id:
         parts.append(f"listing_id={listing_id}")
     if image_b64:
         parts.append("image_attached=true")
-    if parts:
-        return f"[{', '.join(parts)}] {message}"
-    return message
+    return f"[{', '.join(parts)}] {message}"
 
 
 async def route_to_onboarding(
@@ -46,7 +48,9 @@ async def route_to_onboarding(
     merchant_id: str | None = None,
 ) -> dict[str, Any]:
     """Hand the merchant's turn to Onboarding (profile setup / amendments)."""
-    user_message = _compose_specialist_message(message, merchant_id=merchant_id)
+    user_message = _compose_specialist_message(
+        message, partner_id=partner_id, merchant_id=merchant_id,
+    )
     agg = await a2a.aggregate_peer_stream("onboarding", user_message, partner_id)
     return {"status": "ok", "narration": agg["narration"]}
 
@@ -60,7 +64,7 @@ async def route_to_listing_intake(
 ) -> dict[str, Any]:
     """Hand the merchant's turn to Listing Intake (draft -> priced listing)."""
     user_message = _compose_specialist_message(
-        message, merchant_id=merchant_id, image_b64=image_b64,
+        message, partner_id=partner_id, merchant_id=merchant_id, image_b64=image_b64,
     )
     agg = await a2a.aggregate_peer_stream("listing_intake", user_message, partner_id)
     return {"status": "ok", "narration": agg["narration"]}
@@ -100,6 +104,7 @@ async def route_to_dispute_triage(
     """Forward a dispute to Dispute Triage (replay + per-pressure diff)."""
     user_message = _compose_specialist_message(
         f"Dispute on listing_id={listing_id}: {dispute_text}",
+        partner_id=partner_id,
         listing_id=listing_id,
     )
     agg = await a2a.aggregate_peer_stream("dispute_triage", user_message, partner_id)

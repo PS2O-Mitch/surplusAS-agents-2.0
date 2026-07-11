@@ -62,6 +62,11 @@ async def test_init_connection_registers_jsonb_and_json_codecs() -> None:
     }
     # Encoder turns a Python object into a JSON string (round-trip on write).
     assert json.loads(jsonb["encoder"]({"a": 1})) == {"a": 1}
+    # Pre-serialised writers (json.dumps / model_dump_json at the call site)
+    # must pass through untouched — double-encoding stores a JSON *string*
+    # scalar instead of an object, breaking the audit round-trip.
+    assert jsonb["encoder"]('{"a": 1}') == '{"a": 1}'
+    assert json.loads(jsonb["encoder"]('{"a": 1}')) == {"a": 1}
     # jsonb/json are catalog types.
     assert jsonb["schema"] == "pg_catalog"
 

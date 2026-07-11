@@ -44,19 +44,20 @@ async def post_concierge(
 
 
 def _compose_concierge_message(body: ConciergeRequest) -> str:
-    """Pack merchant_id / listing_id context into the user message string.
+    """Pack partner_id / merchant_id / listing_id context into the message.
 
-    Same rationale as `routes_demo._compose_concierge_message`. Image
-    attachments are deferred to Phase 4 (need multimodal Content wrapping).
+    partner_id is ALWAYS injected: it is the tenant identity anchor, and the
+    routing tools take it as a model-filled parameter — without the true
+    value in context the model invents one and every downstream row lands
+    under a garbage partner_id. Image attachments are deferred (need
+    multimodal Content wrapping).
     """
-    parts: list[str] = []
+    parts: list[str] = [f"partner_id={body.partner_id}"]
     if body.merchant_id:
         parts.append(f"merchant_id={body.merchant_id}")
     if body.listing_id:
         parts.append(f"listing_id={body.listing_id}")
-    if parts:
-        return f"[{', '.join(parts)}] {body.message}"
-    return body.message
+    return f"[{', '.join(parts)}] {body.message}"
 
 
 @router.get("/listings/{listing_id}")

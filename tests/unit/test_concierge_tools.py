@@ -35,7 +35,7 @@ def _patch_aggregator(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     return captured
 
 
-async def test_route_to_onboarding_sends_plain_message(
+async def test_route_to_onboarding_sends_partner_prefixed_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = _patch_aggregator(monkeypatch)
@@ -44,7 +44,9 @@ async def test_route_to_onboarding_sends_plain_message(
         partner_id="sk_demo",
     )
     assert captured["peer"] == "onboarding"
-    assert captured["user_message"] == "I'm a deli in Tampa"
+    # partner_id is always injected — the specialist's persist tools take it
+    # as a model-filled param, so the true tenant identity must be in context.
+    assert captured["user_message"] == "[partner_id=sk_demo] I'm a deli in Tampa"
     assert captured["partner_id"] == "sk_demo"
     assert out["status"] == "ok"
     assert out["narration"].startswith("(onboarding narration for")
@@ -57,7 +59,9 @@ async def test_route_to_onboarding_includes_merchant_id_prefix(
     await concierge_tools.route_to_onboarding(
         message="change my floor", partner_id="sk_demo", merchant_id="m-1",
     )
-    assert captured["user_message"] == "[merchant_id=m-1] change my floor"
+    assert captured["user_message"] == (
+        "[partner_id=sk_demo, merchant_id=m-1] change my floor"
+    )
 
 
 async def test_route_to_listing_intake_marks_image_attached(
