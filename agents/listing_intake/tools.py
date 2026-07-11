@@ -131,7 +131,7 @@ async def request_anchor_price(
     draft: dict[str, Any],
     partner_id: str,
     merchant_id: str,
-    now_hour: int | None = None,
+    now_hour: int = -1,
 ) -> dict[str, Any]:
     """Call Pricing over A2A to anchor this draft to a live recommendation.
 
@@ -142,8 +142,10 @@ async def request_anchor_price(
     `region` and `merchant_floor_pct` are read from the merchant profile
     (tenancy-checked on partner_id), NOT model-supplied — a hallucinated
     region silently prices against the wrong (or no) anchor. `now_hour`
-    defaults to the current hour in the profile's timezone; the explicit
-    override exists for deterministic tests/evals.
+    defaults (-1 sentinel) to the current hour in the profile's timezone;
+    the explicit override exists for deterministic tests/evals. (Sentinel
+    rather than `int | None`: a union type flips ADK's schema builder into
+    emitting `additional_properties`, which the Gemini API rejects.)
 
     Sends a plain-English request to Pricing (the shape its prompt knows how
     to translate into `price_listing(...)`) and aggregates the stream. The
@@ -186,7 +188,7 @@ async def request_anchor_price(
 
     region = profile["region"]
     merchant_floor_pct = float(profile["merchant_floor_pct"])
-    if now_hour is None:
+    if now_hour < 0:
         try:
             tz = ZoneInfo(profile["timezone"])
         except Exception:  # noqa: BLE001 — free-text tz column; UTC beats a crash
