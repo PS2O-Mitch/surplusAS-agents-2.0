@@ -23,12 +23,15 @@ from shared.webhook_events import emit_event
 
 
 async def fetch_recommendation_log(*, listing_id: str) -> dict[str, Any]:
-    """Return the most recent recommendation_log row for `listing_id`.
+    """Return the listing's CURRENT recommendation_log row.
 
-    Going through `recommendation_log` directly (ORDER BY created_at DESC
-    LIMIT 1) avoids assuming `agents.listings.current_recommendation_id` is
-    in sync. The Dispute Triage prompt treats this row's `recommended_price`
-    + `applied_pressures` as the "old" side of the diff.
+    Resolved via `agents.listings.current_recommendation_id` — the binding
+    `persist_listing` writes. A direct `recommendation_log.listing_id`
+    lookup can never work for intake-priced listings: pricing runs BEFORE
+    the listing row exists, so those audit rows carry `listing_id=NULL`
+    forever (append-only — no backfill). The Dispute Triage prompt treats
+    this row's `recommended_price` + `applied_pressures` as the "old" side
+    of the diff.
     """
     try:
         UUID(listing_id)
@@ -39,14 +42,15 @@ async def fetch_recommendation_log(*, listing_id: str) -> dict[str, Any]:
 
     await init_pool()
     row = await fetch_one(
-        "SELECT recommendation_id, listing_id, merchant_id, partner_id, "
-        "       pricing_input, recommended_price, recommended_discount_pct, "
-        "       anchor_p50, anchor_source, anchor_region, "
-        "       applied_pressures, formula_version, coefficients_version, "
-        "       replay_of "
-        "FROM agents.recommendation_log "
-        "WHERE listing_id = $1 "
-        "ORDER BY created_at DESC LIMIT 1",
+        "SELECT r.recommendation_id, l.listing_id, l.merchant_id, l.partner_id, "
+        "       r.pricing_input, r.recommended_price, r.recommended_discount_pct, "
+        "       r.anchor_p50, r.anchor_source, r.anchor_region, "
+        "       r.applied_pressures, r.formula_version, r.coefficients_version, "
+        "       r.replay_of "
+        "FROM agents.listings l "
+        "JOIN agents.recommendation_log r "
+        "  ON r.recommendation_id = l.current_recommendation_id "
+        "WHERE l.listing_id = $1",
         listing_id,
     )
     if row is None:
