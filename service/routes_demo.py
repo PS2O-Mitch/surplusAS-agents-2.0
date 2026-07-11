@@ -41,8 +41,7 @@ def _compose_concierge_message(body: dict[str, Any]) -> str:
     The bundled static demo (`service/static/surplusas-merchant-demo.html`) is
     a port from SurplusAS-API-2.0 and still sends the legacy
     `{mode, input, image?}` envelope — see line 863 of the page. Accept both
-    shapes here so the page works without a rewrite (the rewrite is the H6
-    item in OpenItems.md and lives in Phase 5).
+    shapes here so the page works without a rewrite.
 
     ADK's Runner accepts a string (auto-wrapped as user content) but not a
     dict envelope, so we materialise the actual merchant text into a string.
