@@ -14,6 +14,7 @@ This task (E1) adds only `fetch_recommendation_log`.
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -56,7 +57,17 @@ async def fetch_recommendation_log(*, listing_id: str) -> dict[str, Any]:
     if row is None:
         return {"status": "not_found",
                 "error": f"no recommendation found for listing_id {listing_id!r}"}
-    return {"status": "ok", "recommendation": dict(row)}
+    # Tool responses travel to the model as JSON; asyncpg hands back UUID
+    # and Decimal objects, which json.dumps rejects.
+    return {"status": "ok", "recommendation": {k: _json_safe(v) for k, v in row.items()}}
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
 
 
 async def diff_pressures(*, old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
