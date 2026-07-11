@@ -2,11 +2,11 @@
 
 SurplusAS multi-agent service. Hub-and-spoke topology — one FastAPI service on **Fly.io**, all five ADK agents running **in-process**:
 
-- **Concierge** (`gemini-2.5-pro`) — single externally-addressable agent; routes merchant turns to specialists.
-- **Pricing** (`gemini-2.5-flash`) — thin LLM shell over the deterministic pricing engine.
-- **Onboarding** (`gemini-2.5-flash`) — converts merchant freeform into a `MerchantProfile`.
-- **Listing Intake** (`gemini-2.5-flash`) — parses drafts; calls Pricing laterally for live anchors.
-- **Dispute Triage** (`gemini-2.5-pro`) — replays prior recommendations against fresh anchors; narrates pressure deltas.
+- **Concierge** (`gemini-3.1-pro-preview`) — single externally-addressable agent; routes merchant turns to specialists.
+- **Pricing** (`gemini-3.5-flash`) — thin LLM shell over the deterministic pricing engine.
+- **Onboarding** (`gemini-3.5-flash`) — converts merchant freeform into a `MerchantProfile`.
+- **Listing Intake** (`gemini-3.5-flash`) — parses drafts; calls Pricing laterally for live anchors.
+- **Dispute Triage** (`gemini-3.1-pro-preview`) — replays prior recommendations against fresh anchors; narrates pressure deltas.
 
 Customer surface: **REST + webhooks** (HMAC-SHA256 signed, at-least-once, 5 retries).
 

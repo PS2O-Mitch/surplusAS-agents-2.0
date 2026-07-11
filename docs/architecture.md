@@ -20,11 +20,11 @@ flowchart TB
     end
 
     subgraph mesh["A2A internal mesh"]
-        concierge["Concierge<br/>gemini-2.5-pro<br/>(only externally-addressable)"]
-        pricing["Pricing<br/>gemini-2.5-flash<br/>deterministic, audit-bearing"]
-        onboarding["Onboarding<br/>gemini-2.5-flash"]
-        intake["Listing Intake<br/>gemini-2.5-flash"]
-        dispute["Dispute Triage<br/>gemini-2.5-pro"]
+        concierge["Concierge<br/>gemini-3.1-pro-preview<br/>(only externally-addressable)"]
+        pricing["Pricing<br/>gemini-3.5-flash<br/>deterministic, audit-bearing"]
+        onboarding["Onboarding<br/>gemini-3.5-flash"]
+        intake["Listing Intake<br/>gemini-3.5-flash"]
+        dispute["Dispute Triage<br/>gemini-3.1-pro-preview"]
     end
 
     subgraph data["Postgres (Supabase)"]

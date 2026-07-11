@@ -34,11 +34,11 @@ class Settings(BaseSettings):
     google_cloud_project: str = ""
     google_cloud_location: str = ""
 
-    concierge_model: str = "gemini-2.5-pro"
-    dispute_triage_model: str = "gemini-2.5-pro"
-    pricing_model: str = "gemini-2.5-flash"
-    onboarding_model: str = "gemini-2.5-flash"
-    listing_intake_model: str = "gemini-2.5-flash"
+    concierge_model: str = "gemini-3.1-pro-preview"
+    dispute_triage_model: str = "gemini-3.1-pro-preview"
+    pricing_model: str = "gemini-3.5-flash"
+    onboarding_model: str = "gemini-3.5-flash"
+    listing_intake_model: str = "gemini-3.5-flash"
 
     # --- Postgres ---------------------------------------------------------
     # Plain asyncpg DSN (Supabase). Use the session-mode pooler or the

@@ -6,7 +6,7 @@ This file provides guidance to AI agents (Claude Code, Gemini CLI, etc.) working
 
 `surplusAS-agents-2.0` — the multi-agent service for SurplusAS. Hub-and-spoke topology, one FastAPI service on Fly.io with all five ADK agents in-process:
 
-- **Concierge** (`gemini-2.5-pro`) is the only externally-addressable agent.
+- **Concierge** (`gemini-3.1-pro-preview`) is the only externally-addressable agent.
 - Four specialists coordinate with the Concierge through the internal mesh (`shared/a2a.py`, in-process ADK Runners): **Pricing**, **Onboarding**, **Listing Intake**, **Dispute Triage**.
 - Two **lateral edges** exist by design: `Listing Intake → Pricing` (live anchor at intake) and `Dispute Triage → Pricing` (replay at dispute time).
 - Customer-facing protocols: **REST + webhooks**. The mesh is internal; the open A2A protocol surface (`service/a2a_app.py`) is an optional interop layer.

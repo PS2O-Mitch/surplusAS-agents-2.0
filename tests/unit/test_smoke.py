@@ -27,8 +27,8 @@ def test_settings_construct_without_secrets(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
     s = Settings(_env_file=None)
     assert s.google_genai_use_vertexai is False
-    assert s.concierge_model == "gemini-2.5-pro"
-    assert s.pricing_model == "gemini-2.5-flash"
+    assert s.concierge_model == "gemini-3.1-pro-preview"
+    assert s.pricing_model == "gemini-3.5-flash"
 
 
 def test_app_health_check() -> None:
