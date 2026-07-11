@@ -4,7 +4,8 @@ Four tools, all async, returning JSON-serialisable dicts. The flow:
 
     parse_draft(text, image_b64?) -> ListingDraft     (model fills, tool validates)
     validate_listing(draft)        -> ValidationResult
-    request_anchor_price(draft, partner_id) -> RecommendationLogEntry  (lateral A2A -> Pricing)
+    request_anchor_price(draft, partner_id, merchant_id) -> RecommendationLogEntry
+                                                       (lateral A2A -> Pricing)
     persist_listing(draft, recommendation_id, merchant_id) -> {"listing_id": ...}
 
 Listings are NEVER saved without a recommendation. If pricing returns
@@ -13,9 +14,11 @@ Listings are NEVER saved without a recommendation. If pricing returns
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from shared import a2a
 from shared.db import fetch_one, init_pool
@@ -127,15 +130,20 @@ async def request_anchor_price(
     *,
     draft: dict[str, Any],
     partner_id: str,
-    region: str,
-    merchant_floor_pct: float,
-    now_hour: int,
+    merchant_id: str,
+    now_hour: int | None = None,
 ) -> dict[str, Any]:
     """Call Pricing over A2A to anchor this draft to a live recommendation.
 
     Lateral edge per CLAUDE.md ("Listing Intake -> Pricing"). The draft hasn't
     been persisted yet — Pricing will write a `recommendation_log` row with
     `listing_id=NULL`, and `persist_listing` will then row-bind it.
+
+    `region` and `merchant_floor_pct` are read from the merchant profile
+    (tenancy-checked on partner_id), NOT model-supplied — a hallucinated
+    region silently prices against the wrong (or no) anchor. `now_hour`
+    defaults to the current hour in the profile's timezone; the explicit
+    override exists for deterministic tests/evals.
 
     Sends a plain-English request to Pricing (the shape its prompt knows how
     to translate into `price_listing(...)`) and aggregates the stream. The
@@ -151,6 +159,39 @@ async def request_anchor_price(
             "error": "draft must have numeric retail_value and hours_until_expiry "
                      "before pricing",
         }
+
+    try:
+        merch_uuid = UUID(merchant_id)
+    except ValueError as exc:
+        return {
+            "status": "validation_error",
+            "error": f"invalid merchant_id UUID: {exc}",
+            "field": "merchant_id",
+        }
+
+    await init_pool()
+    profile = await fetch_one(
+        "SELECT region, merchant_floor_pct, timezone "
+        "FROM agents.merchant_profiles "
+        "WHERE merchant_id = $1 AND partner_id = $2",
+        merch_uuid,
+        partner_id,
+    )
+    if profile is None:
+        return {
+            "status": "error",
+            "error": f"no merchant profile found for merchant_id {merchant_id!r} "
+                     "under this partner — the merchant must onboard first",
+        }
+
+    region = profile["region"]
+    merchant_floor_pct = float(profile["merchant_floor_pct"])
+    if now_hour is None:
+        try:
+            tz = ZoneInfo(profile["timezone"])
+        except Exception:  # noqa: BLE001 — free-text tz column; UTC beats a crash
+            tz = ZoneInfo("UTC")
+        now_hour = datetime.now(tz).hour
 
     user_message = (
         "Please price this listing using the price_listing tool. "

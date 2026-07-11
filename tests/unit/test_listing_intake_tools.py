@@ -126,6 +126,13 @@ async def test_request_anchor_price_sends_pricing_request_in_english(
 
     from agents.listing_intake import tools as intake_tools
     monkeypatch.setattr(intake_tools.a2a, "aggregate_peer_stream", fake_aggregate)
+    # region/floor/timezone come from the merchant profile, not the model.
+    monkeypatch.setattr(intake_tools, "fetch_one", AsyncMock(return_value={
+        "region": "US-FL-Hillsborough",
+        "merchant_floor_pct": 0.10,
+        "timezone": "America/New_York",
+    }))
+    monkeypatch.setattr(intake_tools, "init_pool", AsyncMock())
 
     result = await intake_tools.request_anchor_price(
         draft={
@@ -136,8 +143,7 @@ async def test_request_anchor_price_sends_pricing_request_in_english(
             "hours_until_expiry": "4",
         },
         partner_id="sk_demo",
-        region="US-FL-Hillsborough",
-        merchant_floor_pct=0.10,
+        merchant_id="33333333-3333-3333-3333-333333333333",
         now_hour=18,
     )
 
@@ -175,11 +181,39 @@ async def test_request_anchor_price_validation_error_before_pricing(
     result = await intake_tools.request_anchor_price(
         draft={"title": "x", "category": "prepared_meal", "units": 1},
         partner_id="sk_demo",
-        region="US-FL",
-        merchant_floor_pct=0.10,
+        merchant_id="33333333-3333-3333-3333-333333333333",
         now_hour=12,
     )
     assert result["status"] == "validation_error"
+    assert called is False
+
+
+async def test_request_anchor_price_errors_without_merchant_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unknown merchant (or wrong partner) must error before any A2A call —
+    never price against a guessed region."""
+    from agents.listing_intake import tools as intake_tools
+
+    called = False
+
+    async def fake_aggregate(**_: Any) -> dict[str, Any]:
+        nonlocal called
+        called = True
+        return {"narration": "", "tool_calls": [], "event_count": 0}
+
+    monkeypatch.setattr(intake_tools.a2a, "aggregate_peer_stream", fake_aggregate)
+    monkeypatch.setattr(intake_tools, "fetch_one", AsyncMock(return_value=None))
+    monkeypatch.setattr(intake_tools, "init_pool", AsyncMock())
+
+    result = await intake_tools.request_anchor_price(
+        draft={"title": "x", "category": "prepared_meal", "units": 1,
+               "retail_value": "10", "hours_until_expiry": "4"},
+        partner_id="sk_demo",
+        merchant_id="33333333-3333-3333-3333-333333333333",
+    )
+    assert result["status"] == "error"
+    assert "onboard" in result["error"]
     assert called is False
 
 

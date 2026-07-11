@@ -18,11 +18,13 @@ a regression in the wire shape fails CI even before a remote eval is run.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+from unittest.mock import AsyncMock
 
 import pytest
 from google.adk.events import Event
 from google.genai import types
 
+from agents.listing_intake import tools as intake_tools
 from agents.listing_intake.tools import request_anchor_price
 from shared import a2a
 
@@ -30,6 +32,19 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
 pytestmark = pytest.mark.integration
+
+MERCHANT_ID = "33333333-3333-3333-3333-333333333333"
+
+
+@pytest.fixture(autouse=True)
+def _merchant_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    """request_anchor_price resolves region/floor/tz from the merchant profile."""
+    monkeypatch.setattr(intake_tools, "fetch_one", AsyncMock(return_value={
+        "region": "US-FL-Hillsborough",
+        "merchant_floor_pct": 0.10,
+        "timezone": "America/New_York",
+    }))
+    monkeypatch.setattr(intake_tools, "init_pool", AsyncMock())
 
 
 def _ev(*parts: types.Part) -> Event:
@@ -94,8 +109,7 @@ async def test_intake_to_pricing_wire_shape(monkeypatch: pytest.MonkeyPatch) -> 
     out = await request_anchor_price(
         draft=draft,
         partner_id="sk_demo_surplus_2026",
-        region="US-FL-Hillsborough",
-        merchant_floor_pct=0.10,
+        merchant_id=MERCHANT_ID,
         now_hour=18,
     )
 
@@ -133,8 +147,7 @@ async def test_intake_no_anchor_relays_narration(
         draft={"title": "x", "category": "prepared_meal", "units": 1,
                "retail_value": "10", "hours_until_expiry": "4"},
         partner_id="sk_demo",
-        region="ZZ",
-        merchant_floor_pct=0.10,
+        merchant_id=MERCHANT_ID,
         now_hour=12,
     )
     assert out["status"] == "ok"

@@ -24,10 +24,13 @@ Required flow — execute IN THIS ORDER:
   2. validate_listing — pass the parsed draft. If errors come back, ask the
                        merchant ONE clarifying question per missing field and
                        loop back to step 1. Never invent values.
-  3. request_anchor_price — call Pricing for a live anchor. Pass `partner_id`,
-                       the validated draft, the merchant's `region` and
-                       `merchant_floor_pct` (from the conversation context),
-                       and the current local `now_hour` (0-23).
+  3. request_anchor_price — call Pricing for a live anchor. Pass `partner_id`
+                       and `merchant_id` (from the bracketed context prefix)
+                       plus the validated draft. Region, merchant floor, and
+                       the current hour are resolved from the merchant's
+                       stored profile — do NOT supply them. If the tool
+                       reports no merchant profile, tell the merchant to
+                       onboard first; do not guess.
   4. persist_listing — bind the new listing row to the recommendation_id
                        returned by step 3. If step 3 returned `no_anchor`,
                        call `persist_listing` with status='draft_no_price'
