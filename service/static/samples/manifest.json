@@ -4,49 +4,49 @@
     {
       "id": "bakery",
       "image": "samples/bakery.webp",
-      "note": "Closing in 30 mins, about 20 croissants and a few pain au chocolats left from this morning's bake. Bakery closes at 6pm.",
+      "note": "Closing in 30 mins, about 20 croissants and a few pain au chocolats left from this morning's bake. Bakery closes at 6pm. Retail is $3.50 apiece.",
       "category": "Bakery"
     },
     {
       "id": "prepared-meals",
       "image": "samples/prepared-meals.webp",
-      "note": "Lunch rush is over, we have 8 chicken teriyaki bentos left. Made fresh this morning, good until 9pm tonight.",
+      "note": "Lunch rush is over, we have 8 chicken teriyaki bentos left. Made fresh this morning, good until 9pm tonight. They sell for $13.99 each.",
       "category": "Prepared meals"
     },
     {
       "id": "produce",
       "image": "samples/produce.webp",
-      "note": "Mixed organic greens, about 6 bags. Sell-by tomorrow but still crisp. Need to move these today.",
+      "note": "Mixed organic greens, about 6 bags. Sell-by tomorrow but still crisp. Need to move these today. Retail $5.99 a bag.",
       "category": "Produce"
     },
     {
       "id": "dairy",
       "image": "samples/dairy.webp",
-      "note": "Greek yogurt cups, about 24 of them. Expiring in 3 days, can't fit on main shelf anymore.",
+      "note": "Greek yogurt cups, about 24 of them. Expiring in 3 days, can't fit on main shelf anymore. Retail $1.89 each.",
       "category": "Dairy"
     },
     {
       "id": "pantry",
       "image": "samples/pantry.webp",
-      "note": "Pasta and canned tomatoes, close to 40 units total. Dented cans and damaged packaging, still sealed and safe.",
+      "note": "Pasta and canned tomatoes, close to 40 units total. Dented cans and damaged packaging, still sealed and safe. Roughly $120 retail all together.",
       "category": "Pantry"
     },
     {
       "id": "hot-food",
       "image": "samples/hot-food.webp",
-      "note": "Two large pepperoni pizzas, made 20 minutes ago, customer no-show. Still hot. Can hold for 45 minutes.",
+      "note": "Two large pepperoni pizzas, made 20 minutes ago, customer no-show. Still hot. Can hold for 45 minutes. They go for $18 each.",
       "category": "Hot prepared"
     },
     {
       "id": "mixed-inventory",
       "image": "samples/mixed-inventory.webp",
-      "note": "End-of-day surplus bag: 2 sandwiches, a salad, a yogurt, some fruit. Everything good until tomorrow morning.",
+      "note": "End-of-day surplus bag: 2 sandwiches, a salad, a yogurt, some fruit. Everything good until tomorrow morning. About $25 retail value in the bag.",
       "category": "Mixed"
     },
     {
       "id": "single-item",
       "image": "samples/single-item.webp",
-      "note": "One whole rotisserie chicken from today's batch, unsold. Cooked at 2pm, still warm, good for tonight.",
+      "note": "One whole rotisserie chicken from today's batch, unsold. Cooked at 2pm, still warm, good for tonight. Retail $9.99.",
       "category": "Single item"
     }
   ]
