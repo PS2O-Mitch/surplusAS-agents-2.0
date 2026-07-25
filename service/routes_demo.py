@@ -2,26 +2,57 @@
 
 The static page (`service/static/surplusas-merchant-demo.html`) can't carry an
 API key — it's just HTML served from the same origin. The demo shim runs
-unauthenticated and forces `partner_id=sk_demo_surplus_2026` so the static
-page works out of the box. The whole surface (shim + static mount) is only
-registered when `DEMO_MODE=true` (`service/app.py`) — never in production.
+unauthenticated and forces `partner_id=demo_001` — the partner the committed
+demo key (`sk_demo_surplus_2026`) resolves to through `public.partner_keys`,
+so shim-created rows are visible to the authenticated `/v1/*` surface. The
+whole surface (shim + static mount) is only registered when `DEMO_MODE=true`
+(`service/app.py`) — never in production.
 """
 
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import Any
 
 from fastapi import APIRouter
 
 from shared import a2a
+from shared.db import fetch_one, init_pool
 
 router = APIRouter(prefix="/demo/v1", tags=["demo"])
-DEMO_PARTNER_ID = "sk_demo_surplus_2026"
+DEMO_PARTNER_ID = "demo_001"
+
+_demo_merchant_cache: str | None = None
+
+
+async def _demo_merchant_id() -> str | None:
+    """The demo partner's first merchant profile, cached for the process.
+
+    The static page never sends a merchant_id, but Listing Intake resolves
+    region/floor/local-hour from the merchant profile — without one every
+    demo listing dead-ends in an onboarding prompt. Errors resolve to None
+    so the shim never 500s here; the agent just asks the merchant to
+    onboard first.
+    """
+    global _demo_merchant_cache
+    if _demo_merchant_cache is None:
+        with suppress(Exception):
+            await init_pool()
+            row = await fetch_one(
+                "SELECT merchant_id FROM agents.merchant_profiles "
+                "WHERE partner_id = $1 ORDER BY created_at LIMIT 1",
+                DEMO_PARTNER_ID,
+            )
+            if row is not None:
+                _demo_merchant_cache = str(row["merchant_id"])
+    return _demo_merchant_cache
 
 
 @router.post("/agent")
 async def demo_agent(body: dict[str, Any]) -> dict[str, Any]:
     """Delegate to /v1/concierge with a fixed demo partner_id."""
+    if not body.get("merchant_id"):
+        body["merchant_id"] = await _demo_merchant_id()
     user_message = _compose_concierge_message(body)
     aggregated = await a2a.call_concierge(
         user_message=user_message,
@@ -60,6 +91,8 @@ def _compose_concierge_message(body: dict[str, Any]) -> str:
 @router.post("/listings/publish")
 async def demo_publish_listing(body: dict[str, Any]) -> dict[str, Any]:
     """Force a publish through Listing Intake (used by the static UI's Save flow)."""
+    if not body.get("merchant_id"):
+        body["merchant_id"] = await _demo_merchant_id()
     return await a2a.call_peer_agent(
         peer="listing_intake",
         mode="publish",

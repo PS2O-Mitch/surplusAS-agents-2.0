@@ -34,6 +34,15 @@ DEMO_PARTNER_ID = "sk_demo_surplus_2026"
 
 
 @pytest.fixture(autouse=True)
+def _no_demo_merchant(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the shim's demo-merchant lookup away from a real database."""
+    async def _none() -> str | None:
+        return None
+
+    monkeypatch.setattr("service.routes_demo._demo_merchant_id", _none)
+
+
+@pytest.fixture(autouse=True)
 def _seed_resources(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     get_settings.cache_clear()
     monkeypatch.setenv("CONCIERGE_AGENT_RESOURCE",

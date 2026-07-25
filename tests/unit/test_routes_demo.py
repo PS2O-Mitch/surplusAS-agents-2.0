@@ -13,6 +13,15 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 
+@pytest.fixture(autouse=True)
+def _no_demo_merchant(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the shim's demo-merchant lookup away from a real database."""
+    async def _none() -> str | None:
+        return None
+
+    monkeypatch.setattr("service.routes_demo._demo_merchant_id", _none)
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     with TestClient(create_app()) as c:
@@ -39,9 +48,35 @@ def test_demo_agent_uses_demo_partner_id(
     assert body["narration"] == "demo ok"
     assert body["specialist_called"] == "onboarding"
     assert body["specialist_payload"] == {"merchant_id": "abc"}
-    assert captured["partner_id"] == "sk_demo_surplus_2026"
+    assert captured["partner_id"] == "demo_001"
     assert captured["user_message"] == (
-        "[partner_id=sk_demo_surplus_2026] I run a deli"
+        "[partner_id=demo_001] I run a deli"
+    )
+
+
+def test_demo_agent_injects_demo_merchant_id(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient,
+) -> None:
+    """When the page sends no merchant_id, the shim injects the demo merchant's."""
+    captured: dict[str, Any] = {}
+
+    async def fake_call_concierge(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"narration": "ok", "specialist_called": "listing_intake",
+                "specialist_payload": {}, "event_count": 1}
+
+    async def fake_merchant_id() -> str | None:
+        return "be1ce99c-demo"
+
+    monkeypatch.setattr("service.routes_demo._demo_merchant_id",
+                        fake_merchant_id)
+    monkeypatch.setattr("service.routes_demo.a2a.call_concierge",
+                        fake_call_concierge)
+
+    resp = client.post("/demo/v1/agent", json={"message": "20 croissants left"})
+    assert resp.status_code == 200
+    assert captured["user_message"] == (
+        "[partner_id=demo_001, merchant_id=be1ce99c-demo] 20 croissants left"
     )
 
 
@@ -65,7 +100,7 @@ def test_demo_agent_accepts_legacy_input_field(
     )
     assert resp.status_code == 200
     assert captured["user_message"] == (
-        "[partner_id=sk_demo_surplus_2026] I run a deli in Tampa, FL"
+        "[partner_id=demo_001] I run a deli in Tampa, FL"
     )
 
 
@@ -89,7 +124,7 @@ def test_demo_agent_prepends_context_to_message(
     )
     assert resp.status_code == 200
     assert captured["user_message"] == (
-        "[partner_id=sk_demo_surplus_2026, merchant_id=m-1, listing_id=abc-123] "
+        "[partner_id=demo_001, merchant_id=m-1, listing_id=abc-123] "
         "why is the price low?"
     )
 
@@ -113,12 +148,12 @@ def test_demo_publish_listing_routes_to_intake(
     assert resp.json()["listing_id"] == "abc"
     assert captured["peer"] == "listing_intake"
     assert captured["mode"] == "publish"
-    assert captured["partner_id"] == "sk_demo_surplus_2026"
+    assert captured["partner_id"] == "demo_001"
 
 
 def test_demo_agent_requires_no_auth(client: TestClient,
                                        monkeypatch: pytest.MonkeyPatch) -> None:
-    """Same-origin shim is intentionally unauthenticated (Cloud Run IAP gates static)."""
+    """Same-origin shim is intentionally unauthenticated (DEMO_MODE gates it)."""
     async def fake_call(**_: Any) -> dict[str, Any]:
         return {"narration": "ok", "specialist_called": None,
                 "specialist_payload": {}, "event_count": 1}
@@ -165,7 +200,7 @@ def test_demo_open_dispute_routes_to_triage(
         "diff_pressures", "persist_dispute",
     }
     assert captured["peer"] == "dispute_triage"
-    assert captured["partner_id"] == "sk_demo_surplus_2026"
+    assert captured["partner_id"] == "demo_001"
     assert "L-abc" in captured["user_message"]
     assert "too high" in captured["user_message"]
 
