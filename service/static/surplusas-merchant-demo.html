@@ -852,7 +852,12 @@ let lastListingData = null;   // data from last listing_create response
 let lastListingImage = null;  // base64 captured at publish-time
 let lastPublishedListingId = null;  // returned by /demo/v1/listings/publish; used for dispute
 
-const API_URL = '';
+// Served from /static the page is same-origin with the API; opened straight
+// from disk (file://) it talks to the local dev server instead (CORS is open
+// on the demo surface — service/app.py).
+const IS_FILE = location.protocol === 'file:';
+const API_URL = IS_FILE ? 'http://localhost:8080' : '';
+const STATIC_BASE = IS_FILE ? 'http://localhost:8080/static/' : '';
 
 // Mode tabs
 $$('.mode-tab').forEach(tab => {
@@ -999,7 +1004,7 @@ $('#generateBtn').addEventListener('click', async () => {
     }
 
   } catch (err) {
-    showError('Connection failed', `Could not reach the SurplusAS API. Please try again in a moment.`);
+    showError('Connection failed', `Could not reach the SurplusAS API at ${API_URL || location.origin}. Is the local server running? Start it with: uv run python -m service.main`);
   } finally {
     btn.classList.remove('loading');
     btn.disabled = false;
@@ -1406,7 +1411,7 @@ let lastSampleId = null;
 async function loadSamplesManifest() {
   if (samplesManifest) return samplesManifest;
   // Relative to the page's /static/ base — same origin as the mount in service/app.py.
-  const res = await fetch('samples/manifest.json');
+  const res = await fetch(STATIC_BASE + 'samples/manifest.json');
   if (!res.ok) throw new Error('manifest ' + res.status);
   const json = await res.json();
   samplesManifest = json.samples || [];
@@ -1454,7 +1459,7 @@ $('#tryItBtn').addEventListener('click', async () => {
     lastPublishedListingId = null;
     $('#fileInput').value = '';
 
-    const imgRes = await fetch(sample.image);
+    const imgRes = await fetch(STATIC_BASE + sample.image);
     if (!imgRes.ok) throw new Error('sample ' + imgRes.status);
     const blob = await imgRes.blob();
 

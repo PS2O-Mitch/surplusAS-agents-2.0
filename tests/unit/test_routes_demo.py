@@ -205,6 +205,18 @@ def test_demo_open_dispute_routes_to_triage(
     assert "too high" in captured["user_message"]
 
 
+def test_demo_surface_allows_file_origin(client: TestClient) -> None:
+    """file:// opens send Origin: null; demo CORS must let the page through."""
+    resp = client.options(
+        "/demo/v1/agent",
+        headers={"Origin": "null",
+                 "Access-Control-Request-Method": "POST",
+                 "Access-Control-Request-Headers": "content-type"},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["access-control-allow-origin"] == "*"
+
+
 def test_demo_open_dispute_requires_reason(client: TestClient) -> None:
     resp = client.post(
         "/demo/v1/listings/L-abc/dispute",

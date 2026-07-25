@@ -104,8 +104,14 @@ def create_app() -> FastAPI:
     # The demo shim is unauthenticated (forces the demo partner) and on
     # Cloud Run was hidden behind IAP; on an open host it must be opt-in.
     if get_settings().demo_mode:
+        from fastapi.middleware.cors import CORSMiddleware
+
         from .routes_demo import router as demo_router
         app.include_router(demo_router)
+        # The demo page also works opened straight from disk (file:// sends
+        # Origin: null). Demo-only: DEMO_MODE is never set in production.
+        app.add_middleware(CORSMiddleware, allow_origins=["*"],
+                           allow_methods=["*"], allow_headers=["*"])
         if STATIC_DIR.is_dir():
             app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
