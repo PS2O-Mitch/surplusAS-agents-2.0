@@ -3,6 +3,7 @@
 A hub-and-spoke multi-agent service: one FastAPI gateway on Fly.io with all five ADK agents running **in-process**. The **Concierge** is the only agent on the customer REST path; four specialists coordinate with it across the internal mesh. Customers see REST + webhooks.
 
 Two A2A layers, by design (see [Customer integration model](#customer-integration-model)):
+
 - **Open A2A surface** — every agent can also be published over the **open Agent-to-Agent protocol** (Agent Card at `/.well-known/agent-card.json` + JSON-RPC 2.0) via ADK's `to_a2a()` adapter, so external enterprise agents can discover and call it.
 - **Internal mesh transport** — inter-agent calls run as in-process ADK `Runner` streams (`shared/a2a.py`): no network hop, spans parent naturally.
 
