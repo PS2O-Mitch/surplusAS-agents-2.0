@@ -1028,9 +1028,10 @@ $('#publishBtn').addEventListener('click', async () => {
   btn.disabled = true;
   setStatus('pending', 'Publishing listing...');
 
+  // Image stays client-side: the publish input is embedded verbatim in the
+  // intake agent's prompt envelope, and nothing server-side stores or reads it.
   const publishBody = {
     listing: lastListingData,
-    ...(lastListingImage ? { image: lastListingImage } : {}),
     partner_id: 'demo_001',
     store_id: 'store_demo_01',
   };
@@ -1404,7 +1405,8 @@ let lastSampleId = null;
 
 async function loadSamplesManifest() {
   if (samplesManifest) return samplesManifest;
-  const res = await fetch('/demo/samples/manifest.json');
+  // Relative to the page's /static/ base — same origin as the mount in service/app.py.
+  const res = await fetch('samples/manifest.json');
   if (!res.ok) throw new Error('manifest ' + res.status);
   const json = await res.json();
   samplesManifest = json.samples || [];

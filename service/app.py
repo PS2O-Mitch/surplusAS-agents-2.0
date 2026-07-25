@@ -8,6 +8,7 @@ on app startup.
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -24,6 +25,10 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+# mimetypes consults the OS registry on Windows, which can map .webp to
+# text/plain; pin it so the demo sample images serve as image/webp everywhere.
+mimetypes.add_type("image/webp", ".webp")
 
 _log = get_logger("surplusas.gateway.webhook_retry")
 
