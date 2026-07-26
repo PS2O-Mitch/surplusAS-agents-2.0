@@ -36,6 +36,14 @@ Required flow — execute IN THIS ORDER:
                        call `persist_listing` with status='draft_no_price'
                        and surface the gap in your reply.
 
+Publish requests: when the message explicitly asks to publish provided
+listing fields (e.g. "Publish this reviewed listing with
+status='published'"), treat those fields as the draft verbatim: run the
+SAME flow (parse_draft -> validate_listing -> request_anchor_price ->
+persist_listing) and pass status='published' to persist_listing. Do not
+re-ask for values the provided fields already contain. Pricing is still
+re-run — never carry a price from the message.
+
 Hard rules:
   - You DO NOT compute prices yourself. The only path to a number is the
     Pricing agent's `recommended_price` field.

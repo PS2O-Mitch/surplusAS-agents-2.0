@@ -48,6 +48,105 @@ async def _demo_merchant_id() -> str | None:
     return _demo_merchant_cache
 
 
+# listings + the recommendation that priced them — same JOIN the authenticated
+# GET /v1/listings/{id} uses (service/routes_rest.py); applied_pressures comes
+# back as a dict via the JSONB codec in shared/db.py.
+_LISTING_ENRICH_SQL = (
+    "SELECT l.listing_id, l.title, l.description, l.category, l.units, "
+    "       l.retail_value, l.hours_until_expiry, l.status, "
+    "       r.recommendation_id, r.recommended_price, r.recommended_discount_pct, "
+    "       r.anchor_p50, r.applied_pressures, r.formula_version "
+    "FROM agents.listings l "
+    "JOIN agents.recommendation_log r "
+    "  ON r.recommendation_id = l.current_recommendation_id "
+    "WHERE l.listing_id = $1 AND l.partner_id = $2"
+)
+
+
+def _extract_persisted(tool_calls: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Last successful persist_listing response in the stream, or None.
+
+    Reverse scan: if the model retried persist_listing (validation error,
+    transient DB failure), the LAST ok response is the row its final
+    narration refers to.
+    """
+    for tc in reversed(tool_calls):
+        if tc.get("name") != "persist_listing":
+            continue
+        resp = tc.get("response")
+        if isinstance(resp, dict) and resp.get("status") == "ok" and resp.get("listing_id"):
+            return resp
+    return None
+
+
+async def _demo_context_prefix() -> str:
+    """Bracketed identity prefix the agent prompts require (verbatim-copy rule)."""
+    parts = [f"partner_id={DEMO_PARTNER_ID}"]
+    merchant_id = await _demo_merchant_id()
+    if merchant_id:
+        parts.append(f"merchant_id={merchant_id}")
+    return f"[{', '.join(parts)}]"
+
+
+async def _intake_turn(user_message: str) -> dict[str, Any]:
+    """One Listing Intake turn -> the demo page's clean envelope.
+
+    Calls the intake agent directly (not via the Concierge) so
+    persist_listing's tool response is visible in tool_calls, then
+    enriches from the DB — the UI never carries a price and this shim
+    never writes agents.listings (persist_listing owns those writes).
+
+    - ok:            {status, narration, listing: {...}, pricing: {...}}
+    - clarification: {status, narration} — the agent asked a question or
+                     validation/no_anchor parked the draft; nothing persisted.
+    - error:         {status, narration, error, listing_id} — persisted but
+                     the read-back JOIN failed; degrade loudly, never fake a card.
+    """
+    agg = await a2a.aggregate_peer_stream(
+        "listing_intake", user_message, DEMO_PARTNER_ID,
+    )
+    persisted = _extract_persisted(agg["tool_calls"])
+    if persisted is None:
+        return {"status": "clarification", "narration": agg["narration"]}
+
+    row: dict[str, Any] | None = None
+    with suppress(Exception):
+        await init_pool()
+        row = await fetch_one(
+            _LISTING_ENRICH_SQL, persisted["listing_id"], DEMO_PARTNER_ID,
+        )
+    if row is None:
+        return {
+            "status": "error",
+            "narration": agg["narration"],
+            "error": "listing persisted but could not be read back",
+            "listing_id": persisted["listing_id"],
+        }
+
+    return {
+        "status": "ok",
+        "narration": agg["narration"],
+        "listing": {
+            "listing_id": row["listing_id"],
+            "title": row["title"],
+            "description": row["description"],
+            "category": row["category"],
+            "units": row["units"],
+            "retail_value": row["retail_value"],
+            "hours_until_expiry": row["hours_until_expiry"],
+            "status": row["status"],
+        },
+        "pricing": {
+            "recommendation_id": row["recommendation_id"],
+            "recommended_price": row["recommended_price"],
+            "recommended_discount_pct": row["recommended_discount_pct"],
+            "anchor_p50": row["anchor_p50"],
+            "applied_pressures": row["applied_pressures"],
+            "formula_version": row["formula_version"],
+        },
+    }
+
+
 @router.post("/agent")
 async def demo_agent(body: dict[str, Any]) -> dict[str, Any]:
     """Delegate to /v1/concierge with a fixed demo partner_id."""
@@ -88,17 +187,56 @@ def _compose_concierge_message(body: dict[str, Any]) -> str:
     return f"[{', '.join(parts)}] {message}"
 
 
+@router.post("/listings/generate")
+async def demo_generate_listing(body: dict[str, Any]) -> dict[str, Any]:
+    """Static UI Beat 1: merchant note -> Listing Intake -> reviewable draft.
+
+    The persisted row has status='draft'; the page renders it editable and
+    a later /listings/publish run creates the published row.
+    """
+    note = str(body.get("note") or "").strip()
+    if not note:
+        return {"error": "note is required"}
+    prefix = await _demo_context_prefix()
+    return await _intake_turn(f"{prefix} {note}")
+
+
+_REQUIRED_PUBLISH_FIELDS = ("title", "category", "units", "retail_value",
+                            "hours_until_expiry")
+
+
 @router.post("/listings/publish")
 async def demo_publish_listing(body: dict[str, Any]) -> dict[str, Any]:
-    """Force a publish through Listing Intake (used by the static UI's Save flow)."""
-    if not body.get("merchant_id"):
-        body["merchant_id"] = await _demo_merchant_id()
-    return await a2a.call_peer_agent(
-        peer="listing_intake",
-        mode="publish",
-        input=body,
-        partner_id=DEMO_PARTNER_ID,
+    """Static UI Beat 1b: publish the reviewed (possibly edited) fields.
+
+    Runs the full intake flow again on the edited fields — validate, fresh
+    deterministic re-price, persist with status='published'. Intentionally
+    creates a SECOND listings row: the draft row from /generate stays as
+    audit trail, and edited retail/expiry get a fresh engine-priced
+    recommendation (a price is never carried from the UI). Edited fields
+    are interpolated into an LLM message; DEMO_MODE-gated surface with the
+    partner pinned server-side, so worst case is a weird row under demo_001.
+    """
+    fields = body.get("listing")
+    if not isinstance(fields, dict):
+        return {"error": "listing object is required"}
+    missing = [f for f in _REQUIRED_PUBLISH_FIELDS
+               if not str(fields.get(f) or "").strip()]
+    if missing:
+        return {"error": f"listing is missing required fields: {', '.join(missing)}"}
+
+    prefix = await _demo_context_prefix()
+    user_message = (
+        f"{prefix} Publish this reviewed listing with status='published'. "
+        "Use these exact field values as the draft:\n"
+        f"title: {fields.get('title')}\n"
+        f"description: {fields.get('description') or ''}\n"
+        f"category: {fields.get('category')}\n"
+        f"units: {fields.get('units')}\n"
+        f"retail_value: {fields.get('retail_value')}\n"
+        f"hours_until_expiry: {fields.get('hours_until_expiry')}"
     )
+    return await _intake_turn(user_message)
 
 
 @router.post("/listings/{listing_id}/dispute")

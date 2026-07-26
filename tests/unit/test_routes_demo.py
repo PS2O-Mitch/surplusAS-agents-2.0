@@ -129,26 +129,184 @@ def test_demo_agent_prepends_context_to_message(
     )
 
 
-def test_demo_publish_listing_routes_to_intake(
+# --- /demo/v1/listings/generate + /publish (intake-direct + DB enrichment) ---
+
+def _persist_ok(listing_id: str = "L-1") -> dict[str, Any]:
+    return {"name": "persist_listing", "args": {},
+            "response": {"status": "ok", "listing_id": listing_id,
+                         "recommendation_id": "R-1", "listing_status": "draft"}}
+
+
+_ENRICHED_ROW = {
+    "listing_id": "L-1", "title": "Croissants", "description": "Fresh",
+    "category": "bakery", "units": 20, "retail_value": 3.50,
+    "hours_until_expiry": 2.0, "status": "draft",
+    "recommendation_id": "R-1", "recommended_price": 1.23,
+    "recommended_discount_pct": 0.65, "anchor_p50": 3.00,
+    "applied_pressures": {"expiry_pressure": 0.30}, "formula_version": "v1.2",
+}
+
+_FULL_LISTING_BODY = {
+    "title": "Croissants", "description": "Fresh", "category": "bakery",
+    "units": 20, "retail_value": 3.5, "hours_until_expiry": 2.0,
+}
+
+
+def _wire_intake(monkeypatch: pytest.MonkeyPatch,
+                 tool_calls: list[dict[str, Any]],
+                 row: dict[str, Any] | None) -> dict[str, Any]:
+    """Patch aggregate + DB for the intake-direct routes; returns capture dict."""
+    captured: dict[str, Any] = {"db_args": None, "aggregate_calls": 0}
+
+    async def fake_aggregate(peer: str, user_message: str,
+                             partner_id: str) -> dict[str, Any]:
+        captured["aggregate_calls"] += 1
+        captured["peer"] = peer
+        captured["user_message"] = user_message
+        captured["partner_id"] = partner_id
+        return {"narration": "done", "tool_calls": tool_calls, "event_count": 5}
+
+    async def fake_init_pool() -> None:
+        return None
+
+    async def fake_fetch_one(_sql: str, *args: Any) -> dict[str, Any] | None:
+        captured["db_args"] = args
+        return row
+
+    monkeypatch.setattr("service.routes_demo.a2a.aggregate_peer_stream",
+                        fake_aggregate)
+    monkeypatch.setattr("service.routes_demo.init_pool", fake_init_pool)
+    monkeypatch.setattr("service.routes_demo.fetch_one", fake_fetch_one)
+    return captured
+
+
+def test_demo_generate_requires_note(
     monkeypatch: pytest.MonkeyPatch, client: TestClient,
 ) -> None:
-    captured: dict[str, Any] = {}
+    captured = _wire_intake(monkeypatch, [], None)
+    for body in ({}, {"note": "   "}):
+        resp = client.post("/demo/v1/listings/generate", json=body)
+        assert resp.status_code == 200
+        assert resp.json() == {"error": "note is required"}
+    assert captured["aggregate_calls"] == 0
 
-    async def fake_call(**kwargs: Any) -> dict[str, Any]:
-        captured.update(kwargs)
-        return {"status": "ok", "listing_id": "abc"}
 
-    monkeypatch.setattr("service.routes_demo.a2a.call_peer_agent", fake_call)
+def test_demo_generate_routes_to_intake_with_context(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient,
+) -> None:
+    captured = _wire_intake(monkeypatch, [_persist_ok()], _ENRICHED_ROW)
 
-    resp = client.post(
-        "/demo/v1/listings/publish",
-        json={"draft": {"title": "x"}, "recommendation_id": "rec-1"},
-    )
+    async def fake_merchant_id() -> str | None:
+        return "m-demo"
+
+    monkeypatch.setattr("service.routes_demo._demo_merchant_id", fake_merchant_id)
+
+    resp = client.post("/demo/v1/listings/generate",
+                       json={"note": "20 croissants left"})
     assert resp.status_code == 200
-    assert resp.json()["listing_id"] == "abc"
     assert captured["peer"] == "listing_intake"
-    assert captured["mode"] == "publish"
     assert captured["partner_id"] == "demo_001"
+    assert captured["user_message"] == (
+        "[partner_id=demo_001, merchant_id=m-demo] 20 croissants left"
+    )
+
+
+def test_demo_generate_clarification_when_no_persist(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient,
+) -> None:
+    tool_calls = [
+        {"name": "parse_draft", "args": {}, "response": {"status": "ok"}},
+        {"name": "validate_listing", "args": {},
+         "response": {"status": "validation_error",
+                      "errors": [{"field": "retail_value", "error": "missing"}]}},
+    ]
+    captured = _wire_intake(monkeypatch, tool_calls, _ENRICHED_ROW)
+
+    resp = client.post("/demo/v1/listings/generate", json={"note": "some pastries"})
+    body = resp.json()
+    assert body == {"status": "clarification", "narration": "done"}
+    assert captured["db_args"] is None  # no read-back without a persisted row
+
+
+def test_demo_generate_enriches_persisted_listing(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient,
+) -> None:
+    captured = _wire_intake(monkeypatch, [_persist_ok()], _ENRICHED_ROW)
+
+    resp = client.post("/demo/v1/listings/generate", json={"note": "20 croissants"})
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["narration"] == "done"
+    assert body["listing"]["listing_id"] == "L-1"
+    assert body["listing"]["status"] == "draft"
+    assert body["pricing"]["recommended_price"] == 1.23
+    assert body["pricing"]["applied_pressures"] == {"expiry_pressure": 0.30}
+    assert body["pricing"]["formula_version"] == "v1.2"
+    assert captured["db_args"] == ("L-1", "demo_001")
+
+
+def test_demo_generate_uses_last_successful_persist(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient,
+) -> None:
+    tool_calls = [
+        {"name": "persist_listing", "args": {},
+         "response": {"status": "validation_error", "error": "bad uuid"}},
+        _persist_ok("L-2"),
+    ]
+    captured = _wire_intake(monkeypatch, tool_calls,
+                            {**_ENRICHED_ROW, "listing_id": "L-2"})
+
+    resp = client.post("/demo/v1/listings/generate", json={"note": "20 croissants"})
+    assert resp.json()["listing"]["listing_id"] == "L-2"
+    assert captured["db_args"] == ("L-2", "demo_001")
+
+
+def test_demo_generate_error_when_readback_fails(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient,
+) -> None:
+    _wire_intake(monkeypatch, [_persist_ok()], None)
+
+    resp = client.post("/demo/v1/listings/generate", json={"note": "20 croissants"})
+    body = resp.json()
+    assert body["status"] == "error"
+    assert body["listing_id"] == "L-1"
+    assert "read back" in body["error"]
+
+
+def test_demo_publish_requires_listing_fields(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient,
+) -> None:
+    captured = _wire_intake(monkeypatch, [], None)
+
+    resp = client.post("/demo/v1/listings/publish", json={})
+    assert resp.json() == {"error": "listing object is required"}
+
+    resp = client.post("/demo/v1/listings/publish",
+                       json={"listing": {"title": "x"}})
+    err = resp.json()["error"]
+    for field in ("category", "units", "retail_value", "hours_until_expiry"):
+        assert field in err
+    assert captured["aggregate_calls"] == 0
+
+
+def test_demo_publish_composes_publish_message(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient,
+) -> None:
+    captured = _wire_intake(
+        monkeypatch, [_persist_ok()],
+        {**_ENRICHED_ROW, "status": "published"},
+    )
+
+    resp = client.post("/demo/v1/listings/publish",
+                       json={"listing": _FULL_LISTING_BODY})
+    body = resp.json()
+    msg = captured["user_message"]
+    assert msg.startswith("[partner_id=demo_001]")
+    assert "status='published'" in msg
+    assert "title: Croissants" in msg
+    assert "retail_value: 3.5" in msg
+    assert body["status"] == "ok"
+    assert body["listing"]["status"] == "published"
 
 
 def test_demo_agent_requires_no_auth(client: TestClient,

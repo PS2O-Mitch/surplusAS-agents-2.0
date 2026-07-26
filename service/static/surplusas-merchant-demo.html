@@ -90,6 +90,10 @@ body {
 .screen::-webkit-scrollbar { display: none; }
 
 .header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 16px 0 20px;
 }
 
@@ -110,7 +114,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
+  flex-shrink: 0;
   background: var(--accent-light);
   color: var(--accent);
   border: 1.5px solid var(--accent);
@@ -119,7 +123,6 @@ body {
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
-  min-height: 0;
   cursor: pointer;
   transition: transform 0.1s;
 }
@@ -292,26 +295,52 @@ body {
 
 .result-body { padding: 18px; }
 
-.listing-title {
-  font-size: 18px;
-  font-weight: 700;
+/* Editable listing fields — read as listing text until hovered/focused. */
+.edit-field {
+  width: 100%;
+  font-family: inherit;
   color: var(--text);
-  line-height: 1.3;
-  margin-bottom: 8px;
+  background: transparent;
+  border: 1.5px dashed transparent;
+  border-radius: 8px;
+  padding: 4px 6px;
+  margin-left: -6px;
+  transition: border-color 0.15s, background 0.15s;
+  outline: none;
 }
 
-.listing-desc {
+.edit-field:hover { border-color: var(--border); }
+.edit-field:focus { border-color: var(--accent); background: var(--card); }
+
+.edit-title {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  margin-bottom: 6px;
+}
+
+.edit-desc {
   font-size: 14px;
   color: var(--text2);
   line-height: 1.5;
-  margin-bottom: 16px;
+  resize: none;
+  margin-bottom: 14px;
 }
+
+.meta-item .edit-field {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 2px 4px;
+  margin-left: -4px;
+}
+
+select.edit-field { appearance: none; cursor: pointer; }
 
 .price-row {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 .price-surplus {
@@ -333,6 +362,35 @@ body {
   background: var(--accent);
   padding: 3px 8px;
   border-radius: 6px;
+}
+
+.pressure-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.pressure-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.audit-line {
+  font-size: 11px;
+  color: var(--text3);
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  margin-bottom: 6px;
+}
+
+.price-note {
+  font-size: 11.5px;
+  color: var(--text3);
+  margin-bottom: 16px;
 }
 
 .meta-grid {
@@ -357,155 +415,15 @@ body {
   margin-bottom: 4px;
 }
 
-.meta-value {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  line-height: 1.4;
-}
-
-.items-list {
-  margin-bottom: 16px;
-}
-
-.items-list h4 {
-  font-size: 13px;
-  font-weight: 600;
+.agent-notes {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+  margin-top: 4px;
+  font-size: 12.5px;
   color: var(--text2);
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-}
-
-.item-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.item-row:last-child { border-bottom: none; }
-
-.item-name {
-  font-size: 14px;
-  color: var(--text);
-  font-weight: 500;
-}
-
-.item-conf {
-  font-size: 12px;
-  color: var(--text3);
-  font-weight: 500;
-}
-
-.dietary-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 16px;
-}
-
-.diet-tag {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 20px;
-  background: var(--bg);
-  color: var(--text2);
-  border: 1px solid var(--border);
-}
-
-.diet-tag.active {
-  background: var(--accent-light);
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.safety-box {
-  background: var(--amber-light);
-  border-radius: var(--radius-sm);
-  padding: 12px 14px;
-  margin-bottom: 16px;
-}
-
-.safety-box h4 {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--amber);
-  margin-bottom: 4px;
-}
-
-.safety-box p {
-  font-size: 13px;
-  color: #8B6914;
   line-height: 1.5;
+  white-space: pre-wrap;
 }
-
-.allergen-box {
-  background: var(--danger-light);
-  border-radius: var(--radius-sm);
-  padding: 12px 14px;
-  margin-bottom: 16px;
-}
-
-.allergen-box h4 {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--danger);
-  margin-bottom: 4px;
-}
-
-.allergen-box p {
-  font-size: 13px;
-  color: #8B2020;
-  line-height: 1.5;
-}
-
-.confidence-bar {
-  margin-bottom: 16px;
-}
-
-.confidence-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-.confidence-header span {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text2);
-}
-
-.confidence-track {
-  height: 6px;
-  background: var(--border);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.confidence-fill {
-  height: 100%;
-  border-radius: 3px;
-  background: var(--accent);
-  transition: width 0.8s ease;
-}
-
-.outcome-section {
-  padding: 16px 18px;
-  border-top: 1px solid var(--border);
-}
-
-.outcome-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: var(--text3);
-  padding: 3px 0;
-}
-
-.outcome-row span:last-child { font-family: 'DM Sans', monospace; }
 
 .error-card {
   background: var(--danger-light);
@@ -520,34 +438,11 @@ body {
 .error-card h3 { font-size: 15px; font-weight: 600; color: var(--danger); margin-bottom: 6px; }
 .error-card p { font-size: 13px; color: #8B2020; line-height: 1.5; }
 
-.mode-tabs {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 16px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-}
+.clarification-box { background: #EEF2FF; border: 1px solid #A5B4FC; border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 16px; }
+.clarification-box h4 { font-size: 12px; font-weight: 700; color: #4338CA; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.4px; }
+.clarification-box p { font-size: 13px; color: #3730A3; line-height: 1.5; }
 
-.mode-tabs::-webkit-scrollbar { display: none; }
-
-.mode-tab {
-  flex-shrink: 0;
-  padding: 8px 14px;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 500;
-  border: 1.5px solid var(--border);
-  background: var(--card);
-  color: var(--text2);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.mode-tab.active {
-  background: var(--accent);
-  color: white;
-  border-color: var(--accent);
-}
+.listing-id-chip { display: inline-block; font-size: 11px; font-weight: 600; color: var(--text3); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; margin-bottom: 12px; font-family: monospace; }
 
 .home-bar {
   position: absolute;
@@ -559,53 +454,6 @@ body {
   background: #CCC;
   border-radius: 3px;
 }
-
-.backend-badge {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: var(--accent-light);
-  color: var(--accent);
-  margin-left: 8px;
-  vertical-align: middle;
-}
-
-.warnings-banner {
-  background: var(--amber-light);
-  border: 1px solid var(--amber);
-  border-radius: var(--radius-sm);
-  padding: 10px 14px;
-  margin-bottom: 14px;
-}
-.warnings-banner h4 { font-size: 12px; font-weight: 700; color: var(--amber); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.4px; }
-.warnings-banner ul { list-style: none; padding: 0; }
-.warnings-banner ul li { font-size: 13px; color: #8B6914; line-height: 1.5; padding: 2px 0; }
-.warnings-banner ul li::before { content: '⚠ '; }
-
-.clarification-box { background: #EEF2FF; border: 1px solid #A5B4FC; border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 16px; }
-.clarification-box h4 { font-size: 12px; font-weight: 700; color: #4338CA; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.4px; }
-.clarification-box ul { list-style: none; padding: 0; }
-.clarification-box ul li { font-size: 13px; color: #3730A3; line-height: 1.5; padding: 2px 0; }
-.clarification-box ul li::before { content: '? '; font-weight: 700; }
-
-.photo-quality-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; margin-left: 8px; vertical-align: middle; }
-.photo-quality-badge.good    { background: var(--accent-light); color: var(--accent); }
-.photo-quality-badge.acceptable { background: var(--amber-light); color: var(--amber); }
-.photo-quality-badge.poor   { background: var(--danger-light); color: var(--danger); }
-
-.listing-id-chip { display: inline-block; font-size: 11px; font-weight: 600; color: var(--text3); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; margin-bottom: 12px; font-family: monospace; }
-
-.photo-suggestions { margin-top: 6px; padding: 0; list-style: none; }
-.photo-suggestions li { font-size: 12px; color: var(--text2); padding: 2px 0; line-height: 1.4; }
-.photo-suggestions li::before { content: '→ '; color: var(--text3); }
-
-.pricing-delta-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-.pricing-delta-label { font-size: 12px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
-.pricing-current-discount { font-size: 14px; font-weight: 600; color: var(--text2); }
-.pricing-arrow { font-size: 14px; color: var(--text3); }
-.pricing-new-discount { font-size: 14px; font-weight: 700; color: var(--accent); }
 
 .publish-section {
   padding: 16px 18px 18px;
@@ -770,12 +618,10 @@ body {
 
   <div class="screen" id="screen">
     <div class="header">
-      <h1>SurplusAS Demo</h1>
-      <p>Merchant listing</p>
-    </div>
-
-    <div class="mode-tabs">
-      <button class="mode-tab active" data-mode="listing_create">Create listing</button>
+      <div>
+        <h1>SurplusAS Demo</h1>
+        <p>Merchant listing</p>
+      </div>
       <button class="try-it-btn" id="tryItBtn" type="button" aria-label="Try with sample food image">
         <span aria-hidden="true">✨</span>
         <span>Try It</span>
@@ -796,8 +642,8 @@ body {
     </div>
 
     <div class="input-group">
-      <label id="inputLabel">Merchant note</label>
-      <textarea class="text-input" id="merchantInput" rows="3" placeholder="e.g. Closing in 30 mins, 20 croissants left. Use code SAVE20"></textarea>
+      <label for="merchantInput">Merchant note</label>
+      <textarea class="text-input" id="merchantInput" rows="3" placeholder="e.g. Closing in 30 mins, 20 croissants left. Retail $3.50 each"></textarea>
     </div>
 
     <button class="generate-btn" id="generateBtn">
@@ -812,11 +658,10 @@ body {
 
     <div class="result-card" id="resultCard">
       <div class="result-header">
-        <h3>Agent output <span class="backend-badge" id="backendBadge"></span></h3>
+        <h3>Review listing</h3>
         <span class="status-badge" id="statusBadge"></span>
       </div>
       <div class="result-body" id="resultBody"></div>
-      <div class="outcome-section" id="outcomeSection"></div>
       <div class="publish-section" id="publishSection" style="display:none">
         <button class="publish-btn" id="publishBtn">
           <span class="btn-text">Publish Listing</span>
@@ -846,11 +691,16 @@ body {
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
-let currentMode = 'listing_create';
-let imageBase64 = null;
-let lastListingData = null;   // data from last listing_create response
-let lastListingImage = null;  // base64 captured at publish-time
-let lastPublishedListingId = null;  // returned by /demo/v1/listings/publish; used for dispute
+let imageBase64 = null;  // client-side visual context only; never sent to the backend
+let current = null;      // last ok envelope from /generate or /publish
+
+// The nine categories seeded in pricing_coefficients / reference_prices.
+const CATEGORIES = ['prepared_meal','bakery','beverage','deli','produce',
+                    'dairy','packaged_goods','frozen','mixed_bag'];
+
+const publishedListingId = () =>
+  current && current.status === 'ok' && current.listing.status === 'published'
+    ? current.listing.listing_id : null;
 
 // Served from /static the page is same-origin with the API; opened straight
 // from disk (file://) it talks to the local dev server instead (CORS is open
@@ -858,54 +708,6 @@ let lastPublishedListingId = null;  // returned by /demo/v1/listings/publish; us
 const IS_FILE = location.protocol === 'file:';
 const API_URL = IS_FILE ? 'http://localhost:8080' : '';
 const STATIC_BASE = IS_FILE ? 'http://localhost:8080/static/' : '';
-
-// Mode tabs
-$$('.mode-tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    $$('.mode-tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    currentMode = tab.dataset.mode;
-    updateUIForMode();
-  });
-});
-
-function updateUIForMode() {
-  const uploadSection = $('#upload-section');
-  const inputLabel = $('#inputLabel');
-  const input = $('#merchantInput');
-  const btn = $('#generateBtn .btn-text');
-
-  switch(currentMode) {
-    case 'listing_create':
-      uploadSection.style.display = 'block';
-      inputLabel.textContent = 'Merchant note';
-      input.placeholder = 'e.g. Closing in 30 mins, 20 croissants left. Use code SAVE20';
-      input.rows = 3;
-      btn.textContent = 'Generate listing';
-      break;
-    case 'search_interpret':
-      uploadSection.style.display = 'none';
-      inputLabel.textContent = 'Customer search query';
-      input.placeholder = 'e.g. cheap vegetarian dinner tonight, no nuts';
-      input.rows = 2;
-      btn.textContent = 'Interpret search';
-      break;
-    case 'moderate':
-      uploadSection.style.display = 'none';
-      inputLabel.textContent = 'Listing to moderate (JSON or description)';
-      input.placeholder = '{"title": "Homemade Bone Broth", "description": "Made in my kitchen. Cures joint pain."}';
-      input.rows = 4;
-      btn.textContent = 'Run moderation';
-      break;
-    case 'pricing_optimize':
-      uploadSection.style.display = 'none';
-      inputLabel.textContent = 'Listing + context (JSON)';
-      input.placeholder = '{"title": "Pizza", "current_price": 10.80, "original_price": 18.00, "store_closes": "9pm", "views": 12, "saves": 0}';
-      input.rows = 4;
-      btn.textContent = 'Optimize pricing';
-      break;
-  }
-}
 
 // Image upload
 $('#uploadZone').addEventListener('click', () => $('#fileInput').click());
@@ -941,15 +743,8 @@ zone.addEventListener('drop', e => {
   reader.readAsDataURL(file);
 });
 
-// Generate
-$('#generateBtn').addEventListener('click', async () => {
-  const btn = $('#generateBtn');
-  const input = $('#merchantInput').value.trim();
-
-  if (!input && !imageBase64) return;
-
-  btn.classList.add('loading');
-  btn.disabled = true;
+function resetOutput() {
+  current = null;
   $('#resultCard').classList.remove('visible');
   $('#errorCard').classList.remove('visible');
   $('#publishSection').style.display = 'none';
@@ -961,47 +756,48 @@ $('#generateBtn').addEventListener('click', async () => {
   $('#disputeResult').classList.remove('visible');
   $('#disputeResult').innerHTML = '';
   $('#disputeInput').value = '';
-  lastListingData = null;
-  lastListingImage = null;
-  lastPublishedListingId = null;
+}
 
-  const body = {
-    mode: currentMode,
-    input: input || 'Analyze the image and generate a listing',
-  };
+// Generate — merchant note -> Listing Intake -> reviewable draft
+$('#generateBtn').addEventListener('click', async () => {
+  const btn = $('#generateBtn');
+  const note = $('#merchantInput').value.trim();
 
-  if (imageBase64 && currentMode === 'listing_create') {
-    body.image = imageBase64;
+  if (!note) {
+    $('#merchantInput').focus();
+    return;
   }
 
+  btn.classList.add('loading');
+  btn.disabled = true;
+  resetOutput();
+
   try {
-    console.log('[SurplusAS] listing_create payload:', JSON.stringify(body, null, 2));
-    const res = await fetch(`${API_URL}/demo/v1/agent`, {
+    console.log('[SurplusAS] generate payload:', JSON.stringify({ note }));
+    const res = await fetch(`${API_URL}/demo/v1/listings/generate`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note }),
     });
 
     const json = await res.json();
-    console.log('[SurplusAS] listing_create response (HTTP ' + res.status + '):', JSON.stringify(json, null, 2));
+    console.log('[SurplusAS] generate response (HTTP ' + res.status + '):', JSON.stringify(json, null, 2));
 
     if (!res.ok) {
       showError('API Error ' + res.status, json.detail || 'Request failed');
       return;
     }
-
-    renderResult(json);
-
-    // Stash listing for explicit publish
-    if (currentMode === 'listing_create' && json.success !== false) {
-      lastListingData = json.data || json;
-      lastListingImage = imageBase64;
-      $('#publishSection').style.display = 'block';
-      $('#publishStatus').textContent = '';
-      $('#publishStatus').className = 'publish-status';
+    if (json.error) {
+      showError('Generate failed', json.error);
+      return;
     }
+    if (json.status === 'error') {
+      showError('Generate failed', json.error || 'The listing could not be read back.');
+      return;
+    }
+
+    current = json.status === 'ok' ? json : null;
+    renderCard(json);
 
   } catch (err) {
     showError('Connection failed', `Could not reach the SurplusAS API at ${API_URL || location.origin}. Is the local server running? Start it with: uv run python -m service.main`);
@@ -1011,65 +807,74 @@ $('#generateBtn').addEventListener('click', async () => {
   }
 });
 
-// Publish — send listing to /v1/listings/publish on explicit click
+// Publish — send the reviewed (possibly edited) fields; the agent re-validates
+// and the engine re-prices them, then persists a published row.
 $('#publishBtn').addEventListener('click', async () => {
-  if (!lastListingData) return;
+  if (!current || current.status !== 'ok') return;
 
-  if (!confirm('Publish this listing to customers?')) return;
-
-  const btn = $('#publishBtn');
+  const draft = readDraftFromCard();
   const statusEl = $('#publishStatus');
-
   const setStatus = (cls, text) => {
     statusEl.className = 'publish-status ' + cls;
     statusEl.textContent = text;
   };
-  const finish = () => {
-    btn.classList.remove('loading');
-    btn.disabled = false;
-  };
 
+  const problem = validateDraft(draft);
+  if (problem) {
+    setStatus('error', problem.msg);
+    if (problem.el) problem.el.focus();
+    return;
+  }
+
+  if (!confirm('Publish this listing to customers?')) return;
+
+  const btn = $('#publishBtn');
   btn.classList.add('loading');
   btn.disabled = true;
-  setStatus('pending', 'Publishing listing...');
-
-  // Image stays client-side: the publish input is embedded verbatim in the
-  // intake agent's prompt envelope, and nothing server-side stores or reads it.
-  const publishBody = {
-    listing: lastListingData,
-    partner_id: 'demo_001',
-    store_id: 'store_demo_01',
-  };
+  setStatus('pending', 'Re-pricing and publishing...');
 
   try {
     const res = await fetch(`${API_URL}/demo/v1/listings/publish`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(publishBody),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ listing: draft }),
     });
     const r = await res.json();
     console.log('[SurplusAS] publish response:', JSON.stringify(r, null, 2));
 
-    if (res.ok && r.success) {
-      setStatus('success', `Published! ID: ${r.published_listing_id}`);
-      lastPublishedListingId = r.published_listing_id;
-      const ds = $('#disputeSection');
-      if (ds) ds.style.display = 'block';
+    if (!res.ok || r.error) {
+      setStatus('error', `Publish failed: ${r.error || r.detail || 'Unknown error'}`);
+      return;
+    }
+
+    if (r.status === 'ok') {
+      current = r;
+      renderCard(r);
+      // Trust only the DB read-back, never the model's word for it.
+      if (r.listing.status === 'published') {
+        setStatus('success', `Published! ID: ${r.listing.listing_id}`);
+        $('#disputeSection').style.display = 'block';
+      } else {
+        setStatus('pending', `Saved as ${r.listing.status} — publish was not honored; try again.`);
+      }
+    } else if (r.status === 'clarification') {
+      // Keep the edits on screen; surface what the agent asked for.
+      setStatus('error', r.narration || 'The agent needs more information.');
     } else {
-      setStatus('error', `Publish failed: ${r.detail || r.message || 'Unknown error'}`);
+      setStatus('error', r.error || 'Publish failed.');
     }
   } catch (err) {
     setStatus('error', `Publish error: ${err.message}`);
   } finally {
-    finish();
+    btn.classList.remove('loading');
+    btn.disabled = false;
   }
 });
 
-// Beat 2 — open a dispute on the just-published listing
+// Beat 2 — open a dispute on the published listing
 $('#disputeBtn').addEventListener('click', async () => {
-  if (!lastPublishedListingId) return;
+  const lid = publishedListingId();
+  if (!lid) return;
   const reasonEl = $('#disputeInput');
   const reason = (reasonEl.value || '').trim();
   if (!reason) {
@@ -1094,7 +899,7 @@ $('#disputeBtn').addEventListener('click', async () => {
 
   try {
     const res = await fetch(
-      `${API_URL}/demo/v1/listings/${encodeURIComponent(lastPublishedListingId)}/dispute`,
+      `${API_URL}/demo/v1/listings/${encodeURIComponent(lid)}/dispute`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1143,257 +948,102 @@ function showError(title, msg) {
   $('#errorCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-function renderResult(json) {
-  const data = json.data || json;
+// The review card — renders the constructed listing with editable fields.
+// The DOM inputs ARE the edit state; readDraftFromCard() collects them.
+function renderCard(resp) {
   const card = $('#resultCard');
   const body = $('#resultBody');
-  const outcome = $('#outcomeSection');
-
-  // Guard: success:false with HTTP 200
-  if (json.success === false) {
-    showError('Agent error', json.error || json.detail || 'The agent returned success: false');
-    return;
-  }
-
-  // Backend badge
-  const badge = $('#backendBadge');
-  badge.textContent = data.outcome_tracking?.model_used || json.mode || '';
-
-  // Status badge
-  const statusBadge = $('#statusBadge');
-  const status = data.status || data.overall_risk || json.mode;
-  statusBadge.textContent = status;
-  statusBadge.className = 'status-badge';
-  if (status === 'ready_for_publish' || status === 'pass' || data.approved === true) statusBadge.classList.add('ready');
-  else if (status === 'needs_review' || status === 'low_risk' || status === 'medium_risk') statusBadge.classList.add('review');
-  else if (status === 'blocked' || status === 'high_risk' || data.approved === false) statusBadge.classList.add('blocked');
+  const badge = $('#statusBadge');
+  const narration = resp.narration || '';
 
   let html = '';
-  if (Array.isArray(json.warnings) && json.warnings.length > 0) {
-    html += '<div class="warnings-banner"><h4>Validation warnings</h4><ul>';
-    json.warnings.forEach(w => { html += `<li>${esc(typeof w === 'string' ? w : JSON.stringify(w))}</li>`; });
-    html += '</ul></div>';
-  }
+  let badgeText = '';
+  let badgeClass = '';
 
-  let modeHtml = '';
-  if (json.mode === 'listing_create' || data.mode === 'listing_create') {
-    modeHtml = renderListingCreate(data);
-  } else if (json.mode === 'search_interpret' || data.mode === 'search_interpret') {
-    modeHtml = renderSearchInterpret(data);
-  } else if (json.mode === 'moderate' || data.mode === 'moderate') {
-    modeHtml = renderModerate(data);
-  } else if (json.mode === 'pricing_optimize' || data.mode === 'pricing_optimize') {
-    modeHtml = renderPricingOptimize(data);
+  if (resp.status === 'ok') {
+    const l = resp.listing;
+    const p = resp.pricing || {};
+    const noPrice = l.status === 'draft_no_price';
+
+    if (l.status === 'published') { badgeText = 'Published'; badgeClass = 'ready'; }
+    else if (noPrice) { badgeText = 'Needs price'; badgeClass = 'blocked'; }
+    else { badgeText = 'Draft — review & publish'; badgeClass = 'review'; }
+
+    html += `<div class="listing-id-chip">ID: ${esc(l.listing_id)}</div>`;
+    html += `<input id="fTitle" class="edit-field edit-title" value="${esc(l.title || '')}" aria-label="Listing title">`;
+    html += `<textarea id="fDesc" class="edit-field edit-desc" rows="2" aria-label="Description" placeholder="Add a description…">${esc(l.description || '')}</textarea>`;
+
+    if (!noPrice && p.recommended_price != null) {
+      const pct = Math.round(Number(p.recommended_discount_pct || 0) * 100);
+      html += `<div class="price-row">
+        <span class="price-surplus">$${Number(p.recommended_price).toFixed(2)}</span>
+        <span class="price-original">$${Number(l.retail_value).toFixed(2)}</span>
+        ${pct ? `<span class="discount-tag">${pct}% off</span>` : ''}
+      </div>`;
+      const chips = Object.entries(p.applied_pressures || {})
+        .filter(([, v]) => typeof v === 'number')
+        .map(([k, v]) => `<span class="pressure-chip">${esc(k.replace(/_pressure$/, ''))} ${v >= 0 ? '+' : ''}${Number(v).toFixed(2)}</span>`)
+        .join('');
+      if (chips) html += `<div class="pressure-chips">${chips}</div>`;
+      html += `<div class="audit-line">formula ${esc(p.formula_version || '?')} · rec ${esc(String(p.recommendation_id || '').slice(0, 8))}</div>`;
+      html += `<div class="price-note">Set by the pricing engine — editing retail or expiry re-prices on publish.</div>`;
+    }
+
+    html += `<div class="meta-grid">
+      <div class="meta-item"><div class="meta-label">Category</div>${categorySelect(l.category)}</div>
+      <div class="meta-item"><div class="meta-label">Quantity</div><input id="fUnits" class="edit-field" type="number" min="1" step="1" value="${esc(String(l.units ?? ''))}" aria-label="Quantity"></div>
+      <div class="meta-item"><div class="meta-label">Retail value $</div><input id="fRetail" class="edit-field" type="number" min="0.01" step="0.01" value="${esc(String(l.retail_value ?? ''))}" aria-label="Retail value"></div>
+      <div class="meta-item"><div class="meta-label">Hours to expiry</div><input id="fHours" class="edit-field" type="number" min="0" step="0.5" value="${esc(String(l.hours_until_expiry ?? ''))}" aria-label="Hours until expiry"></div>
+    </div>`;
+
+    html += `<div class="agent-notes">${esc(narration || 'Listing saved.')}</div>`;
   } else {
-    modeHtml = `<pre style="font-size:12px;white-space:pre-wrap;color:var(--text2)">${JSON.stringify(data, null, 2)}</pre>`;
+    // clarification — the agent asked a question; nothing was persisted.
+    badgeText = 'Needs info';
+    badgeClass = 'review';
+    html += `<div class="clarification-box"><h4>The agent needs more detail</h4><p>${esc(narration || 'Add more detail to your note.')}</p></div>`;
+    html += `<div class="agent-notes">Add the missing details to your note above and Generate again.</div>`;
   }
 
-  body.innerHTML = html + modeHtml;
+  badge.textContent = badgeText;
+  badge.className = 'status-badge' + (badgeClass ? ' ' + badgeClass : '');
+  body.innerHTML = html;
 
-  // Outcome tracking
-  const ot = data.outcome_tracking;
-  if (ot || json.latency_ms != null) {
-    outcome.innerHTML = `
-      <div class="outcome-row"><span>Agent version</span><span>${ot?.agent_version || '—'}</span></div>
-      <div class="outcome-row"><span>Model</span><span>${ot?.model_used || '—'}</span></div>
-      <div class="outcome-row"><span>Timestamp</span><span>${ot?.inference_timestamp ? new Date(ot.inference_timestamp).toLocaleTimeString() : '—'}</span></div>
-      <div class="outcome-row"><span>Tokens</span><span>${ot?.tokens_consumed || '—'}</span></div>
-      ${json.latency_ms != null ? `<div class="outcome-row"><span>Latency</span><span>${json.latency_ms} ms</span></div>` : ''}
-    `;
-  }
+  const canPublish = resp.status === 'ok' && resp.listing.status !== 'published';
+  $('#publishSection').style.display = resp.status === 'ok' ? 'block' : 'none';
+  $('#publishBtn').style.display = canPublish ? 'block' : 'none';
 
   card.classList.add('visible');
   setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
 }
 
-function renderListingCreate(d) {
-  let html = '';
-
-  // Listing ID
-  if (d.listing_id) {
-    html += `<div class="listing-id-chip">ID: ${esc(d.listing_id)}</div>`;
-  }
-
-  // Confidence
-  const conf = Math.round((d.confidence || 0) * 100);
-  html += `<div class="confidence-bar">
-    <div class="confidence-header"><span>Agent confidence</span><span>${conf}%</span></div>
-    <div class="confidence-track"><div class="confidence-fill" style="width:${conf}%"></div></div>
-  </div>`;
-
-  // Title + description
-  html += `<div class="listing-title">${esc(d.title || '')}</div>`;
-  html += `<div class="listing-desc">${esc(d.description || '')}</div>`;
-
-  // Pricing
-  const p = d.pricing || {};
-  if (p.suggested_surplus_price) {
-    html += `<div class="price-row">
-      <span class="price-surplus">$${Number(p.suggested_surplus_price).toFixed(2)}</span>
-      ${p.estimated_retail_value ? `<span class="price-original">$${Number(p.estimated_retail_value).toFixed(2)}</span>` : ''}
-      ${p.discount_percentage ? `<span class="discount-tag">${p.discount_percentage}% off</span>` : ''}
-    </div>`;
-  }
-
-  // Pricing logic
-  if (p.pricing_logic) {
-    html += `<div class="safety-box" style="margin-bottom:12px"><h4>Pricing logic</h4><p>${esc(p.pricing_logic)}</p></div>`;
-  }
-
-  // Meta grid
-  html += `<div class="meta-grid">
-    <div class="meta-item"><div class="meta-label">Category</div><div class="meta-value">${esc(d.category || '—')}</div></div>
-    <div class="meta-item"><div class="meta-label">Pickup</div><div class="meta-value">${esc(d.pickup_window || '—')}</div></div>
-  </div>`;
-
-  // Items identified
-  const items = d.items_identified || [];
-  if (items.length > 0) {
-    html += `<div class="items-list"><h4>Items identified</h4>`;
-    items.forEach(item => {
-      const c = Math.round((item.confidence || 0) * 100);
-      html += `<div class="item-row">
-        <span class="item-name">${esc(item.name)} (${item.quantity})</span>
-        <span class="item-conf">${c}%</span>
-      </div>`;
-    });
-    html += '</div>';
-  }
-
-  // Dietary tags
-  const da = d.dietary_attributes || {};
-  const tags = [];
-  if (da.is_vegan) tags.push('Vegan');
-  if (da.is_vegetarian) tags.push('Vegetarian');
-  if (da.is_gluten_free) tags.push('Gluten-free');
-  if (da.is_halal) tags.push('Halal');
-  if (da.is_kosher) tags.push('Kosher');
-  if (da.is_nut_free) tags.push('Nut-free');
-  if (da.is_dairy_free) tags.push('Dairy-free');
-
-  if (tags.length > 0) {
-    html += '<div class="dietary-tags">';
-    tags.forEach(t => { html += `<span class="diet-tag active">${t}</span>`; });
-    html += '</div>';
-  }
-
-  // Allergen warning
-  if (da.allergen_warning) {
-    html += `<div class="allergen-box"><h4>Allergen warning</h4><p>${esc(da.allergen_warning)}</p></div>`;
-  }
-
-  // Food safety
-  if (d.food_safety_notes) {
-    html += `<div class="safety-box"><h4>Food safety</h4><p>${esc(d.food_safety_notes)}</p></div>`;
-  }
-
-  // Photo feedback
-  const ia = d.image_analysis || {};
-  if (ia.merchant_feedback || ia.photo_quality || (Array.isArray(ia.photo_suggestions) && ia.photo_suggestions.length > 0)) {
-    const qualityClass = (ia.photo_quality || '').toLowerCase();
-    const qualityBadge = ia.photo_quality ? `<span class="photo-quality-badge ${qualityClass}">${esc(ia.photo_quality)}</span>` : '';
-    let suggestionsHtml = '';
-    if (Array.isArray(ia.photo_suggestions) && ia.photo_suggestions.length > 0) {
-      suggestionsHtml = '<ul class="photo-suggestions">';
-      ia.photo_suggestions.forEach(s => { suggestionsHtml += `<li>${esc(s)}</li>`; });
-      suggestionsHtml += '</ul>';
-    }
-    html += `<div class="meta-item" style="margin-bottom:0">
-      <div class="meta-label">Photo feedback ${qualityBadge}</div>
-      <div class="meta-value">${esc(ia.merchant_feedback || '')}${suggestionsHtml}</div>
-    </div>`;
-  }
-
-  // Clarification needed
-  if (Array.isArray(d.clarification_needed) && d.clarification_needed.length > 0) {
-    html += '<div class="clarification-box"><h4>Clarification needed</h4><ul>';
-    d.clarification_needed.forEach(q => { html += `<li>${esc(q)}</li>`; });
-    html += '</ul></div>';
-  }
-
-  return html;
+function categorySelect(currentCat) {
+  const cat = currentCat || CATEGORIES[0];
+  const options = (CATEGORIES.includes(cat) ? CATEGORIES : [cat, ...CATEGORIES])
+    .map(c => `<option value="${esc(c)}"${c === cat ? ' selected' : ''}>${esc(c)}</option>`)
+    .join('');
+  return `<select id="fCategory" class="edit-field" aria-label="Category">${options}</select>`;
 }
 
-function renderSearchInterpret(d) {
-  let html = '';
-  html += `<div class="meta-item" style="margin-bottom:12px"><div class="meta-label">Detected language</div><div class="meta-value">${d.input_language || '—'}</div></div>`;
-  html += `<div class="listing-title" style="font-size:15px">${esc(d.interpreted_query || '')}</div>`;
-
-  const f = d.filters || {};
-  html += '<div class="meta-grid">';
-  if (f.category) html += `<div class="meta-item"><div class="meta-label">Category</div><div class="meta-value">${esc(f.category)}</div></div>`;
-  if (f.pickup_before) html += `<div class="meta-item"><div class="meta-label">Pickup before</div><div class="meta-value">${esc(f.pickup_before)}</div></div>`;
-  if (f.cuisine_type) html += `<div class="meta-item"><div class="meta-label">Cuisine</div><div class="meta-value">${esc(f.cuisine_type)}</div></div>`;
-  if (f.max_price) html += `<div class="meta-item"><div class="meta-label">Max price</div><div class="meta-value">$${f.max_price}</div></div>`;
-  html += '</div>';
-
-  if (d.sort_preference) html += `<div class="meta-item" style="margin-bottom:12px"><div class="meta-label">Sort by</div><div class="meta-value">${d.sort_preference}</div></div>`;
-
-  const dr = f.dietary_requirements || {};
-  const dietFilters = [];
-  if (dr.must_be_vegan) dietFilters.push('Vegan');
-  if (dr.must_be_vegetarian) dietFilters.push('Vegetarian');
-  if (dr.must_be_gluten_free) dietFilters.push('Gluten-free');
-  if (dr.must_be_nut_free) dietFilters.push('Nut-free');
-  if (dr.must_be_halal) dietFilters.push('Halal');
-  if (dr.must_be_dairy_free) dietFilters.push('Dairy-free');
-  if (dr.must_be_kosher) dietFilters.push('Kosher');
-
-  if (dietFilters.length > 0) {
-    html += '<div class="dietary-tags">';
-    dietFilters.forEach(t => { html += `<span class="diet-tag active">${t}</span>`; });
-    html += '</div>';
-  }
-
-  const kw = d.cross_language_keywords || f.keywords || [];
-  if (kw.length > 0) {
-    html += '<div class="dietary-tags">';
-    kw.forEach(k => { html += `<span class="diet-tag">${esc(k)}</span>`; });
-    html += '</div>';
-  }
-
-  return html;
+function readDraftFromCard() {
+  return {
+    title: $('#fTitle').value.trim(),
+    description: $('#fDesc').value.trim(),
+    category: $('#fCategory').value,
+    units: parseInt($('#fUnits').value, 10),
+    retail_value: parseFloat($('#fRetail').value),
+    hours_until_expiry: parseFloat($('#fHours').value),
+  };
 }
 
-function renderModerate(d) {
-  let html = '';
-  html += `<div class="listing-title" style="font-size:16px">${d.approved ? 'Listing approved' : 'Listing rejected'}</div>`;
-  html += `<div class="meta-item" style="margin-bottom:12px"><div class="meta-label">Risk level</div><div class="meta-value">${d.overall_risk || '—'}</div></div>`;
-
-  (d.flags || []).forEach(flag => {
-    const boxClass = flag.severity === 'block' ? 'allergen-box' : 'safety-box';
-    html += `<div class="${boxClass}">
-      <h4>${flag.rule} (${flag.severity})</h4>
-      <p>${esc(flag.explanation)}</p>
-      ${flag.suggested_fix ? `<p style="margin-top:6px;font-weight:600">Fix: ${esc(flag.suggested_fix)}</p>` : ''}
-    </div>`;
-  });
-
-  return html;
-}
-
-function renderPricingOptimize(d) {
-  let html = '';
-  html += `<div class="price-row">
-    <span class="price-surplus">$${Number(d.recommended_price || 0).toFixed(2)}</span>
-    <span class="discount-tag">${d.recommended_discount_pct || 0}% off</span>
-  </div>`;
-  if (d.current_discount_pct != null) {
-    html += `<div class="pricing-delta-row">
-      <span class="pricing-delta-label">Discount</span>
-      <span class="pricing-current-discount">${d.current_discount_pct}%</span>
-      <span class="pricing-arrow">→</span>
-      <span class="pricing-new-discount">${d.recommended_discount_pct || 0}%</span>
-    </div>`;
-  }
-  html += `<div class="meta-grid">
-    <div class="meta-item"><div class="meta-label">Urgency</div><div class="meta-value">${d.urgency_level || '—'}</div></div>
-    <div class="meta-item"><div class="meta-label">Change</div><div class="meta-value">${d.price_change_magnitude || '—'}</div></div>
-  </div>`;
-  if (d.reasoning) {
-    html += `<div class="safety-box"><h4>Pricing logic</h4><p>${esc(d.reasoning)}</p></div>`;
-  }
-  return html;
+// Mirrors the agent's validate_listing checks — saves an LLM round-trip.
+function validateDraft(d) {
+  if (!d.title) return { msg: 'Title is required.', el: $('#fTitle') };
+  if (!d.category) return { msg: 'Pick a category.', el: $('#fCategory') };
+  if (!Number.isInteger(d.units) || d.units < 1) return { msg: 'Quantity must be a whole number of 1 or more.', el: $('#fUnits') };
+  if (!(d.retail_value > 0)) return { msg: 'Retail value must be greater than 0.', el: $('#fRetail') };
+  if (!(d.hours_until_expiry >= 0)) return { msg: 'Hours to expiry must be 0 or more.', el: $('#fHours') };
+  return null;
 }
 
 function esc(s) {
@@ -1442,21 +1092,7 @@ $('#tryItBtn').addEventListener('click', async () => {
     if (samples.length === 0) return;
     const sample = drawSample(samples);
 
-    // Clear prior response / error / publish state so transitions are clean
-    $('#resultCard').classList.remove('visible');
-    $('#errorCard').classList.remove('visible');
-    $('#publishSection').style.display = 'none';
-    $('#publishStatus').textContent = '';
-    $('#publishStatus').className = 'publish-status';
-    $('#disputeSection').style.display = 'none';
-    $('#disputeStatus').textContent = '';
-    $('#disputeStatus').className = 'dispute-status';
-    $('#disputeResult').classList.remove('visible');
-    $('#disputeResult').innerHTML = '';
-    $('#disputeInput').value = '';
-    lastListingData = null;
-    lastListingImage = null;
-    lastPublishedListingId = null;
+    resetOutput();
     $('#fileInput').value = '';
 
     const imgRes = await fetch(STATIC_BASE + sample.image);
