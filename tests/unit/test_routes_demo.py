@@ -375,6 +375,39 @@ def test_demo_surface_allows_file_origin(client: TestClient) -> None:
     assert resp.headers["access-control-allow-origin"] == "*"
 
 
+def test_demo_rate_limit_per_ip(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient,
+) -> None:
+    """The 11th request in a window from one IP gets 429; other IPs are fine."""
+    _wire_intake(monkeypatch, [], None)
+
+    for _ in range(10):  # cheap requests: fail note validation, still counted
+        assert client.post("/demo/v1/listings/generate", json={}).status_code == 200
+    resp = client.post("/demo/v1/listings/generate", json={})
+    assert resp.status_code == 429
+    assert "rate limit" in resp.json()["detail"].lower()
+
+    other = client.post("/demo/v1/listings/generate", json={},
+                        headers={"Fly-Client-IP": "203.0.113.7"})
+    assert other.status_code == 200
+
+
+def test_demo_rate_limit_global_cap(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient,
+) -> None:
+    """Distinct IPs cannot exceed the global window combined."""
+    _wire_intake(monkeypatch, [], None)
+    monkeypatch.setattr("service.routes_demo._RATE_GLOBAL", (2, 3600.0))
+
+    for i in range(2):
+        resp = client.post("/demo/v1/listings/generate", json={},
+                           headers={"Fly-Client-IP": f"203.0.113.{i}"})
+        assert resp.status_code == 200
+    resp = client.post("/demo/v1/listings/generate", json={},
+                       headers={"Fly-Client-IP": "203.0.113.99"})
+    assert resp.status_code == 429
+
+
 def test_demo_open_dispute_requires_reason(client: TestClient) -> None:
     resp = client.post(
         "/demo/v1/listings/L-abc/dispute",

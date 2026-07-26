@@ -6,20 +6,68 @@ unauthenticated and forces `partner_id=demo_001` — the partner the committed
 demo key (`sk_demo_surplus_2026`) resolves to through `public.partner_keys`,
 so shim-created rows are visible to the authenticated `/v1/*` surface. The
 whole surface (shim + static mount) is only registered when `DEMO_MODE=true`
-(`service/app.py`) — never in production.
+(`service/app.py`) — deliberately on for the public Fly app since 2026-07-25
+(see CLAUDE.md). Every route here triggers paid Gemini calls, so the router
+is rate-limited per client IP plus a global cap.
 """
 
 from __future__ import annotations
 
+import time
+from collections import defaultdict, deque
 from contextlib import suppress
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from shared import a2a
 from shared.db import fetch_one, init_pool
 
-router = APIRouter(prefix="/demo/v1", tags=["demo"])
+# ponytail: in-memory sliding windows — correct while the app is pinned to
+# one machine (same ceiling as the in-memory ADK sessions in shared/a2a.py).
+# Move to a shared store if we ever scale out.
+_RATE_PER_IP = (10, 600.0)      # requests per window: ~3 full demo runs / 10 min
+_RATE_GLOBAL = (100, 3600.0)    # everyone combined — bounds worst-case token burn
+_ip_hits: dict[str, deque[float]] = defaultdict(deque)
+_global_hits: deque[float] = deque()
+
+
+def _allow(hits: deque[float], limit: int, window_s: float, now: float) -> bool:
+    while hits and now - hits[0] > window_s:
+        hits.popleft()
+    if len(hits) >= limit:
+        return False
+    hits.append(now)
+    return True
+
+
+async def _rate_limit(request: Request) -> None:
+    """429 when a client (or the whole demo) exceeds its sliding window.
+
+    Fly's proxy sets Fly-Client-IP authoritatively; the X-Forwarded-For /
+    request.client fallbacks only matter for local dev and tests.
+    """
+    ip = (
+        request.headers.get("fly-client-ip")
+        or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+        or (request.client.host if request.client else "unknown")
+    )
+    now = time.monotonic()
+    if len(_ip_hits) > 10_000:  # bound memory if IPs rotate; stale windows only
+        for key in [k for k, v in _ip_hits.items()
+                    if not v or now - v[-1] > _RATE_PER_IP[1]]:
+            del _ip_hits[key]
+    if not _allow(_ip_hits[ip], *_RATE_PER_IP, now) or not _allow(
+        _global_hits, *_RATE_GLOBAL, now
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail="Demo rate limit reached — try again in a few minutes.",
+        )
+
+
+router = APIRouter(prefix="/demo/v1", tags=["demo"],
+                   dependencies=[Depends(_rate_limit)])
 DEMO_PARTNER_ID = "demo_001"
 
 _demo_merchant_cache: str | None = None
